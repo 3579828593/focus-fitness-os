@@ -56,7 +56,7 @@ jobs:
         run: |
           flutter build web --release \
             --dart-define=API_BASE_URL=$API_BASE_URL \
-            --web-renderer canvaskit
+            --base-href /focus-fitness-os/
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://focus-fitness-os-backend-production.up.railway.app' }}
 
