@@ -18,9 +18,14 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 });
 
 /// Node-RED API 全局 Provider
+/// 生产环境默认使用 Railway 部署的 API
+/// 本地开发可通过 --dart-define=API_BASE_URL=http://127.0.0.1:1880 覆盖
 final nodeRedApiProvider = Provider<NodeRedApi>((ref) {
   return NodeRedApi(
-    baseUrl: 'http://127.0.0.1:1880',
+    baseUrl: const String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: 'https://focus-fitness-os-backend-production.up.railway.app',
+    ),
     apiToken: 'dev-token',
   );
 });
