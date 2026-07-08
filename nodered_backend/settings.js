@@ -52,10 +52,11 @@ module.exports = {
 
     // function 节点可访问的全局上下文模块
     // crypto: JWT 签名/验签 (HMAC-SHA256) 与 refresh_token 随机生成
+    // process: /health 端点需要 process.uptime() 报告运行时长
     functionGlobalContext: {
         crypto: require('crypto'),
-        fs: require('fs')
-        // 可按需扩展：os: require('os'), path: require('path')
+        fs: require('fs'),
+        process: process
     },
 
     // 默认 HTTP 监听端口
