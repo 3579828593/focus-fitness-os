@@ -1,10 +1,8 @@
-import 'dart:io' as io;
-
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 
 import 'tables.dart';
 import 'daos/daos.dart';
+import 'database_connection.dart';
 
 part 'database.g.dart';
 part 'seed.dart';
@@ -30,7 +28,7 @@ part 'seed.dart';
   daos: [ScheduleDao, SessionDao, UnitDao, GoalDao, OpLogDao],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase() : super(createConnection());
 
   // 测试用构造函数
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
@@ -114,15 +112,3 @@ class AppDatabase extends _$AppDatabase {
       );
 }
 
-LazyDatabase _openConnection() {
-  return LazyDatabase(() async {
-    final file = await _getDatabaseFile();
-    return NativeDatabase.createInBackground(file);
-  });
-}
-
-Future<io.File> _getDatabaseFile() async {
-  // 实际项目中用 path_provider 获取应用文档目录
-  // 这里用当前目录作为开发阶段占位
-  return io.File('focus_fitness.db');
-}

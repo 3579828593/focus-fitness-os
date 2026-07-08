@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:riverpod/riverpod.dart';
 
 import '../data/database.dart';
@@ -10,6 +9,7 @@ import '../repositories/session_repository.dart';
 import '../repositories/workout_repository.dart';
 import '../runners/session_state.dart';
 import '../services/tts_service.dart';
+import '../services/tts/tts_factory.dart';
 
 /// ============================================================
 /// 健身会话不可变状态
@@ -76,7 +76,7 @@ class WorkoutSessionState {
 class WorkoutSessionNotifier extends Notifier<WorkoutSessionState> {
   Timer? _timer;
   TtsQueue? _ttsQueue;
-  FlutterTts? _flutterTts;
+  TtsService? _tts;
   int _entryId = 0; // 当前会话对应的日程 ID (上报用)
 
   @override
@@ -115,10 +115,10 @@ class WorkoutSessionNotifier extends Notifier<WorkoutSessionState> {
     // 创建 DB 会话记录
     final sessionId = await repo.createSession(entryId);
 
-    // 初始化 TTS 队列 (内部创建, 不通过构造函数注入)
-    _flutterTts = FlutterTts();
+    // 初始化 TTS 队列 (跨平台抽象, 自动适配 Web/Native)
+    _tts = createTtsService();
     _ttsQueue = TtsQueue((text) async {
-      await _flutterTts!.speak(text);
+      await _tts!.speak(text);
     });
 
     // 绑定回调
