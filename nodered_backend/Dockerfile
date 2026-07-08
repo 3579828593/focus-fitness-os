@@ -14,12 +14,14 @@ RUN npm install --production --no-save
 # 复制项目文件
 COPY settings.js /data/settings.js
 COPY flows/ /data/flows/
+# 将合并后的 flows.json 复制到 /data/ 根目录 (Node-RED flowFile 默认查找位置)
+COPY flows/flows.json /data/flows.json
 
 # 暴露端口
 EXPOSE 1880
 
 # 环境变量默认值
-ENV FLOWS=/data/flows/flows.json \
+ENV FLOWS=flows.json \
     TZ=Asia/Shanghai \
     NODE_RED_SECRET=dev-secret-change-in-prod \
     PORT=1880
