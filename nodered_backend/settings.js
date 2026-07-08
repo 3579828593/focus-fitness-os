@@ -48,15 +48,16 @@ module.exports = {
     // httpNodeAuth: { user: "apiuser", pass: "$2a$08$PLACEHOLDER" },  // 已弃用
 
     // 凭证加密密钥，生产环境务必通过 NODE_RED_SECRET 环境变量覆盖
-    credentialSecret: process.env.NODE_RED_SECRET || "dev-secret-change-in-prod",
+    credentialSecret: process.env.NODE_RED_SECRET || (console.warn('[SECURITY] NODE_RED_SECRET not set, using dev fallback'), "dev-secret-change-in-prod"),
 
     // function 节点可访问的全局上下文模块
-    // crypto: JWT 签名/验签 (HMAC-SHA256) 与 refresh_token 随机生成
+    // crypto: JWT 签名/验签 (HMAC-SHA256) 与 refresh_token 随机生成 + scrypt 密码哈希
+    // fs: Refresh Token 持久化到文件系统
     // JWT_SECRET: 通过环境变量注入，供 auth flow 的 function 节点使用 global.get('JWT_SECRET')
     functionGlobalContext: {
         crypto: require('crypto'),
         fs: require('fs'),
-        JWT_SECRET: process.env.JWT_SECRET || 'focus-fitness-os-jwt-secret-2024'
+        JWT_SECRET: process.env.JWT_SECRET || (console.warn('[SECURITY] JWT_SECRET not set, using dev fallback'), 'focus-fitness-os-jwt-secret-2024')
     },
 
     // 默认 HTTP 监听端口
