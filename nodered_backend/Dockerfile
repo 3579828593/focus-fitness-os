@@ -27,5 +27,8 @@ ENV FLOWS=/data/flows/flows.json \
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
     CMD wget -q --spider http://localhost:1880/ || exit 1
 
-# 启动命令
-CMD ["npm", "start"]
+# 清除基础镜像的 ENTRYPOINT (entrypoint.sh 在容器中找不到)
+ENTRYPOINT []
+
+# 启动命令 - 直接使用 node-red
+CMD ["node-red", "-u", "/data", "-s", "/data/settings.js"]
