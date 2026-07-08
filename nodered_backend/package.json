@@ -10,16 +10,16 @@
   },
   "dependencies": {
     "node-red-contrib-cron-plus": "^2.1.0",
+    "node-red-contrib-google-calendar": "^0.0.4",
     "node-red-contrib-telegrambot": "^1.9.0",
     "node-red-contrib-wger": "^0.2.0",
-    "node-red-node-sqlite": "^1.1.0",
     "node-red-node-email": "^3.0.0",
-    "node-red-node-pushover": "^0.5.0",
-    "@marek-knappe/node-red-google-calendar": "^1.0.0"
+    "node-red-node-pushover": "^0.0.5",
+    "node-red-node-sqlite": "^1.1.0"
   },
   "devDependencies": {
-    "node-red-node-test-helper": "^0.3.0",
-    "mocha": "^10.2.0"
+    "mocha": "^10.8.2",
+    "node-red-node-test-helper": "^0.3.0"
   },
   "engines": {
     "node": ">=18"
