@@ -52,11 +52,11 @@ module.exports = {
 
     // function 节点可访问的全局上下文模块
     // crypto: JWT 签名/验签 (HMAC-SHA256) 与 refresh_token 随机生成
-    // process: /health 端点需要 process.uptime() 报告运行时长
+    // JWT_SECRET: 通过环境变量注入，供 auth flow 的 function 节点使用 global.get('JWT_SECRET')
     functionGlobalContext: {
         crypto: require('crypto'),
         fs: require('fs'),
-        process: process
+        JWT_SECRET: process.env.JWT_SECRET || 'focus-fitness-os-jwt-secret-2024'
     },
 
     // 默认 HTTP 监听端口
