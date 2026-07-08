@@ -886,5 +886,368 @@
       "Content-Type": "application/json"
     },
     "wires": []
+  },
+  {
+    "id": "f9_auth_tab",
+    "type": "tab",
+    "label": "Flow9: JWT认证",
+    "disabled": false,
+    "info": "JWT + Refresh Token 认证体系\n- POST /api/v1/auth/login   用户登录, 签发 access_token(1h) + refresh_token(7d)\n- POST /api/v1/auth/refresh 刷新 access_token\n- POST /api/v1/auth/verify  验证 access_token 有效性\n算法: HMAC-SHA256, 密钥由 JWT_SECRET 环境变量配置\n登录/刷新返回 OAuth2 扁平结构, verify 返回 {code,data,message}"
+  },
+  {
+    "id": "f9_auth_login_in",
+    "type": "http in",
+    "z": "f9_auth_tab",
+    "name": "登录接口",
+    "url": "/api/v1/auth/login",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f9_auth_login_proc"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_login_proc",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "登录处理(签发令牌)",
+    "func": "// ===== JWT 登录处理 =====\nvar crypto = global.get('crypto');\n\n// JWT 密钥与令牌有效期配置 (生产环境通过环境变量覆盖)\nvar JWT_SECRET = process.env.JWT_SECRET || 'focus-fitness-os-jwt-secret-2024';\nvar ACCESS_TOKEN_TTL = 3600;              // Access Token 有效期: 1小时\nvar REFRESH_TOKEN_TTL = 7 * 24 * 3600;    // Refresh Token 有效期: 7天\n\n// base64url 编码工具函数\nfunction base64url(str) {\n    return Buffer.from(str).toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\nfunction base64urlBuf(buf) {\n    return buf.toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\n\n// 签发 Access Token (HMAC-SHA256)\nfunction signAccessToken(user_id, username) {\n    var header = { alg: 'HS256', typ: 'JWT' };\n    var now = Math.floor(Date.now() / 1000);\n    var payload = {\n        user_id: user_id,\n        username: username,\n        iat: now,\n        exp: now + ACCESS_TOKEN_TTL\n    };\n    var headerB64 = base64url(JSON.stringify(header));\n    var payloadB64 = base64url(JSON.stringify(payload));\n    var data = headerB64 + '.' + payloadB64;\n    var sig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\n    return data + '.' + base64urlBuf(sig);\n}\n\n// 生成 Refresh Token (64字节随机 hex)\nfunction generateRefreshToken() {\n    return crypto.randomBytes(64).toString('hex');\n}\n\n// ===== 用户验证 =====\n// 用户库 (生产环境应替换为数据库 + bcrypt, 此处为演示用)\n// TODO: 生产环境集成 bcrypt 与持久化用户存储\nvar users = global.get('auth_users');\nif (!users) {\n    users = [\n        { user_id: 1, username: 'admin', password: 'admin123' }\n    ];\n    global.set('auth_users', users);\n}\n\nvar body = msg.payload || {};\nvar username = body.username;\nvar password = body.password;\n\n// 参数校验\nif (!username || !password) {\n    msg.payload = JSON.stringify({ code: 1, error: '用户名和密码不能为空' });\n    msg.statusCode = 400;\n    return msg;\n}\n\n// 查找用户\nvar user = null;\nfor (var i = 0; i < users.length; i++) {\n    if (users[i].username === username && users[i].password === password) {\n        user = users[i];\n        break;\n    }\n}\n\nif (!user) {\n    msg.payload = JSON.stringify({ code: 1, error: '用户名或密码错误' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 签发令牌\nvar accessToken = signAccessToken(user.user_id, user.username);\nvar refreshToken = generateRefreshToken();\n\n// 存储 Refresh Token 到 global context\nvar refreshStore = global.get('refresh_tokens') || {};\nvar now = Math.floor(Date.now() / 1000);\nrefreshStore[refreshToken] = {\n    user_id: user.user_id,\n    username: user.username,\n    created_at: now,\n    expires_at: now + REFRESH_TOKEN_TTL\n};\nglobal.set('refresh_tokens', refreshStore);\n\n// 返回令牌 (OAuth2 标准扁平结构, 与 Flutter AuthService.AuthTokens.fromJson 契约一致)\nmsg.payload = JSON.stringify({\n    access_token: accessToken,\n    refresh_token: refreshToken,\n    token_type: 'Bearer',\n    expires_in: ACCESS_TOKEN_TTL\n});\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_login_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_login_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "登录响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_refresh_in",
+    "type": "http in",
+    "z": "f9_auth_tab",
+    "name": "刷新接口",
+    "url": "/api/v1/auth/refresh",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f9_auth_refresh_proc"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_refresh_proc",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "刷新处理(重签Access)",
+    "func": "// ===== JWT 刷新处理 =====\nvar crypto = global.get('crypto');\n\nvar JWT_SECRET = process.env.JWT_SECRET || 'focus-fitness-os-jwt-secret-2024';\nvar ACCESS_TOKEN_TTL = 3600;\n\n// base64url 编码工具函数\nfunction base64url(str) {\n    return Buffer.from(str).toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\nfunction base64urlBuf(buf) {\n    return buf.toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\n\n// 签发 Access Token (HMAC-SHA256)\nfunction signAccessToken(user_id, username) {\n    var header = { alg: 'HS256', typ: 'JWT' };\n    var now = Math.floor(Date.now() / 1000);\n    var payload = {\n        user_id: user_id,\n        username: username,\n        iat: now,\n        exp: now + ACCESS_TOKEN_TTL\n    };\n    var headerB64 = base64url(JSON.stringify(header));\n    var payloadB64 = base64url(JSON.stringify(payload));\n    var data = headerB64 + '.' + payloadB64;\n    var sig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\n    return data + '.' + base64urlBuf(sig);\n}\n\n// 从 Authorization 头提取 Bearer 令牌\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) {\n    token = authHeader.substring(7);\n}\n\nif (!token) {\n    msg.payload = JSON.stringify({ code: 1, error: '缺少 Refresh Token' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 验证 Refresh Token 是否存在于 global context\nvar refreshStore = global.get('refresh_tokens') || {};\nvar tokenData = refreshStore[token];\n\nif (!tokenData) {\n    msg.payload = JSON.stringify({ code: 1, error: '无效的 Refresh Token' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 检查 Refresh Token 是否过期\nvar now = Math.floor(Date.now() / 1000);\nif (now > tokenData.expires_at) {\n    // 过期则删除并要求重新登录\n    delete refreshStore[token];\n    global.set('refresh_tokens', refreshStore);\n    msg.payload = JSON.stringify({ code: 1, error: 'Refresh Token 已过期, 请重新登录' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 签发新的 Access Token (保留原 Refresh Token)\nvar accessToken = signAccessToken(tokenData.user_id, tokenData.username);\n\n// 返回令牌 (OAuth2 标准扁平结构, 与 Flutter AuthService.AuthTokens.fromJson 契约一致)\nmsg.payload = JSON.stringify({\n    access_token: accessToken,\n    refresh_token: token,\n    token_type: 'Bearer',\n    expires_in: ACCESS_TOKEN_TTL\n});\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_refresh_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_refresh_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "刷新响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_verify_in",
+    "type": "http in",
+    "z": "f9_auth_tab",
+    "name": "验证接口",
+    "url": "/api/v1/auth/verify",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f9_auth_verify_proc"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_verify_proc",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "验证处理(验签)",
+    "func": "// ===== JWT 验证处理 =====\nvar crypto = global.get('crypto');\n\nvar JWT_SECRET = process.env.JWT_SECRET || 'focus-fitness-os-jwt-secret-2024';\n\n// base64url 解码辅助 (还原为标准 base64)\nfunction base64urlDecode(str) {\n    str = str.replace(/-/g, '+').replace(/_/g, '/');\n    while (str.length % 4) { str += '='; }\n    return str;\n}\n\n// 从 Authorization 头提取 Bearer 令牌\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) {\n    token = authHeader.substring(7);\n}\n\nif (!token) {\n    msg.payload = JSON.stringify({ code: 1, error: '缺少 Access Token' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 解析 JWT (header.payload.signature)\nvar parts = token.split('.');\nif (parts.length !== 3) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌格式无效' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\n// 验证签名 (HMAC-SHA256)\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64')\n    .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\n// 签名比对 (长度一致后再逐字符比较, 降低时序攻击风险)\nif (expectedSigB64.length !== signatureB64.length) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌签名无效' });\n    msg.statusCode = 401;\n    return msg;\n}\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n    diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\nif (diff !== 0) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌签名无效' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 解析 payload\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n    payload = JSON.parse(payloadStr);\n} catch (e) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌负载解析失败' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 检查过期时间\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌已过期' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 验证通过 (verify 端点保留 {code, data, message} 业务响应格式)\nmsg.payload = JSON.stringify({\n    code: 0,\n    data: {\n        valid: true,\n        user_id: payload.user_id,\n        username: payload.username,\n        exp: payload.exp,\n        iat: payload.iat\n    },\n    message: '令牌有效'\n});\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_verify_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_verify_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "验证响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_catch",
+    "type": "catch",
+    "z": "f9_auth_tab",
+    "name": "认证错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f9_auth_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_err_format",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "格式化错误响应",
+    "func": "// 错误格式化: 捕获 Flow 执行异常, 返回统一错误响应\nvar errMsg = msg.error ? msg.error.message : '认证服务内部错误';\nmsg.payload = JSON.stringify({ code: 1, error: errMsg });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_err_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_err_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "错误响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "wires": []
+  },
+  {
+    "id": "f8_metrics",
+    "type": "tab",
+    "label": "Flow8: 指标采集",
+    "disabled": false,
+    "info": "Prometheus 指标采集与暴露\n- GET /metrics: Prometheus 文本格式\n- POST /metrics/record/session: 记录会话\n- POST /metrics/record/proposal: 记录提案\n- POST /metrics/record/api_request: 记录 API 请求\n- POST /metrics/record/sync_queue: 记录同步队列大小\n所有指标存储在 global context: ff_metrics"
+  },
+  {
+    "id": "f8_metrics_comment",
+    "type": "comment",
+    "z": "f8_metrics",
+    "name": "Prometheus 指标采集 (Flow8)",
+    "info": "暴露 focus_fitness_* 系列指标供 Prometheus 抓取。\n计数器/直方图维护在内存 (global.ff_metrics), 进程重启后归零。",
+    "wires": []
+  },
+  {
+    "id": "f8_metrics_http_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "暴露 /metrics",
+    "url": "/metrics",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_render"
+    ]
+  },
+  {
+    "id": "f8_metrics_render",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "渲染 Prometheus 格式",
+    "func": "// 渲染 Prometheus 文本格式指标\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar DURATION_BUCKETS = [60, 300, 600, 900, 1800, 3600, 5400, 7200];\nvar API_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];\nvar lines = [];\n\n// 1. 会话总数计数器\nlines.push('# HELP focus_fitness_sessions_total 会话总数计数器');\nlines.push('# TYPE focus_fitness_sessions_total counter');\nfor (var key in m.sessions_total) {\n    var parts = key.split('|');\n    lines.push('focus_fitness_sessions_total{type=\"' + parts[0] + '\",status=\"' + parts[1] + '\"} ' + m.sessions_total[key]);\n}\n\n// 2. 会话时长直方图\nlines.push('');\nlines.push('# HELP focus_fitness_session_duration_seconds 会话时长直方图 (秒)');\nlines.push('# TYPE focus_fitness_session_duration_seconds histogram');\nfor (var type in m.session_duration) {\n    var h = m.session_duration[type];\n    for (var i = 0; i < DURATION_BUCKETS.length; i++) {\n        var le = DURATION_BUCKETS[i];\n        lines.push('focus_fitness_session_duration_seconds_bucket{type=\"' + type + '\",le=\"' + le + '\"} ' + (h.buckets[le] || 0));\n    }\n    lines.push('focus_fitness_session_duration_seconds_bucket{type=\"' + type + '\",le=\"+Inf\"} ' + h.count);\n    lines.push('focus_fitness_session_duration_seconds_count{type=\"' + type + '\"} ' + h.count);\n    lines.push('focus_fitness_session_duration_seconds_sum{type=\"' + type + '\"} ' + h.sum);\n}\n\n// 3. 提案总数\nlines.push('');\nlines.push('# HELP focus_fitness_proposals_total 提案总数计数器');\nlines.push('# TYPE focus_fitness_proposals_total counter');\nfor (var key in m.proposals_total) {\n    lines.push('focus_fitness_proposals_total{status=\"' + key + '\"} ' + m.proposals_total[key]);\n}\n\n// 4. API 请求总数\nlines.push('');\nlines.push('# HELP focus_fitness_api_requests_total API 请求总数计数器');\nlines.push('# TYPE focus_fitness_api_requests_total counter');\nfor (var key in m.api_requests_total) {\n    var parts = key.split('|');\n    lines.push('focus_fitness_api_requests_total{endpoint=\"' + parts[0] + '\",status=\"' + parts[1] + '\"} ' + m.api_requests_total[key]);\n}\n\n// 5. API 请求延迟直方图\nlines.push('');\nlines.push('# HELP focus_fitness_api_request_duration_seconds API 请求延迟直方图 (秒)');\nlines.push('# TYPE focus_fitness_api_request_duration_seconds histogram');\nfor (var endpoint in m.api_request_duration) {\n    var h = m.api_request_duration[endpoint];\n    for (var i = 0; i < API_DURATION_BUCKETS.length; i++) {\n        var le = API_DURATION_BUCKETS[i];\n        lines.push('focus_fitness_api_request_duration_seconds_bucket{endpoint=\"' + endpoint + '\",le=\"' + le + '\"} ' + (h.buckets[le] || 0));\n    }\n    lines.push('focus_fitness_api_request_duration_seconds_bucket{endpoint=\"' + endpoint + '\",le=\"+Inf\"} ' + h.count);\n    lines.push('focus_fitness_api_request_duration_seconds_count{endpoint=\"' + endpoint + '\"} ' + h.count);\n    lines.push('focus_fitness_api_request_duration_seconds_sum{endpoint=\"' + endpoint + '\"} ' + h.sum);\n}\n\n// 6. 同步队列大小 (gauge)\nlines.push('');\nlines.push('# HELP focus_fitness_sync_queue_size 同步队列大小');\nlines.push('# TYPE focus_fitness_sync_queue_size gauge');\nlines.push('focus_fitness_sync_queue_size ' + m.sync_queue_size);\n\nmsg.payload = lines.join('\\n') + '\\n';\nmsg.headers = {'Content-Type': 'text/plain; version=0.0.4; charset=utf-8'};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_http_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_http_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回指标",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_session_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录会话",
+    "url": "/metrics/record/session",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_session_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_session_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新会话指标",
+    "func": "// 更新会话计数器和时长直方图\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar type = p.type || 'focus';\nvar status = p.status || 'completed';\nvar duration = parseFloat(p.duration_seconds) || 0;\n\n// 校验 type / status\nvar validTypes = ['focus', 'workout'];\nvar validStatus = ['completed', 'abandoned', 'partial'];\nif (validTypes.indexOf(type) < 0 || validStatus.indexOf(status) < 0) {\n    msg.payload = { ok: false, error: 'invalid type or status' };\n    msg.statusCode = 400;\n    return msg;\n}\n\n// 更新计数器\nvar skey = type + '|' + status;\nm.sessions_total[skey] = (m.sessions_total[skey] || 0) + 1;\n\n// 更新会话时长直方图\nvar DURATION_BUCKETS = [60, 300, 600, 900, 1800, 3600, 5400, 7200];\nif (!m.session_duration[type]) {\n    m.session_duration[type] = { buckets: {}, count: 0, sum: 0 };\n}\nvar h = m.session_duration[type];\nh.count += 1;\nh.sum += duration;\nfor (var i = 0; i < DURATION_BUCKETS.length; i++) {\n    if (duration <= DURATION_BUCKETS[i]) {\n        h.buckets[DURATION_BUCKETS[i]] = (h.buckets[DURATION_BUCKETS[i]] || 0) + 1;\n    }\n}\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_session_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_session_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录提案",
+    "url": "/metrics/record/proposal",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_proposal_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新提案指标",
+    "func": "// 更新提案计数器\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar status = p.status || 'accepted';\n\n// 提案状态仅接受 accepted / rejected\nif (status !== 'accepted' && status !== 'rejected') {\n    msg.payload = { ok: false, error: 'invalid status: ' + status };\n    msg.statusCode = 400;\n    return msg;\n}\n\nm.proposals_total[status] = (m.proposals_total[status] || 0) + 1;\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_proposal_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_api_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录 API 请求",
+    "url": "/metrics/record/api_request",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_api_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_api_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新 API 请求指标",
+    "func": "// 更新 API 请求计数器和延迟直方图\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar endpoint = p.endpoint || 'unknown';\nvar status = String(p.status || '200');\nvar duration = parseFloat(p.duration_seconds) || 0;\n\n// 更新 API 请求计数器\nvar akey = endpoint + '|' + status;\nm.api_requests_total[akey] = (m.api_requests_total[akey] || 0) + 1;\n\n// 更新 API 延迟直方图\nvar API_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];\nif (!m.api_request_duration[endpoint]) {\n    m.api_request_duration[endpoint] = { buckets: {}, count: 0, sum: 0 };\n}\nvar h = m.api_request_duration[endpoint];\nh.count += 1;\nh.sum += duration;\nfor (var i = 0; i < API_DURATION_BUCKETS.length; i++) {\n    if (duration <= API_DURATION_BUCKETS[i]) {\n        h.buckets[API_DURATION_BUCKETS[i]] = (h.buckets[API_DURATION_BUCKETS[i]] || 0) + 1;\n    }\n}\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_api_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_api_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录同步队列",
+    "url": "/metrics/record/sync_queue",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_sync_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新同步队列大小",
+    "func": "// 更新同步队列大小 (gauge)\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar size = parseInt(p.size, 10);\nif (isNaN(size) || size < 0) {\n    msg.payload = { ok: false, error: 'invalid size' };\n    msg.statusCode = 400;\n    return msg;\n}\n\nm.sync_queue_size = size;\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true, size: size };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_sync_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
   }
 ]
