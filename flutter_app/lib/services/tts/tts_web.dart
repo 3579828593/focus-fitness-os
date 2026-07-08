@@ -45,4 +45,4 @@ class WebTtsService implements TtsService {
   }
 }
 
-TtsService _createTts() => WebTtsService();
+TtsService createTtsImpl() => WebTtsService();

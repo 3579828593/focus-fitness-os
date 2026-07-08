@@ -14,5 +14,5 @@ import 'tts_native_stub.dart'
 
 /// 创建当前平台的 TTS 服务实例
 TtsService createTtsService() {
-  return _createTts();
+  return createTtsImpl();
 }

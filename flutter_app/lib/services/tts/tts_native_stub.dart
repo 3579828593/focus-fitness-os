@@ -16,4 +16,4 @@ class _StubTtsService implements TtsService {
   void dispose() {}
 }
 
-TtsService _createTts() => _StubTtsService();
+TtsService createTtsImpl() => _StubTtsService();

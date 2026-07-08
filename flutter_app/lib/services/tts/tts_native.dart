@@ -43,4 +43,4 @@ class NativeTtsService implements TtsService {
   }
 }
 
-TtsService _createTts() => NativeTtsService();
+TtsService createTtsImpl() => NativeTtsService();
