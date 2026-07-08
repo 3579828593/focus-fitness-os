@@ -23,19 +23,21 @@
 
 module.exports = {
     // 管理后台认证：仅允许 admin 用户登录编辑器
+    // 密码哈希可通过 NODE_RED_ADMIN_HASH 环境变量覆盖
+    // 默认密码: FocusFitness2026! (生产环境务必通过环境变量覆盖)
     adminAuth: {
         type: "credentials",
         users: [
             {
                 username: "admin",
-                password: "$2a$08$PLACEHOLDER_REPLACE_ME",
+                password: process.env.NODE_RED_ADMIN_HASH || "$2b$08$***REMOVED***",
                 permissions: "*"
             }
         ]
     },
 
-    // 编辑器仅绑定本地回环地址，外部无法直接访问
-    uiHost: "127.0.0.1",
+    // 绑定所有网络接口，允许云平台代理外部访问
+    uiHost: "0.0.0.0",
 
     // HTTP 节点（API 端点）认证：已移除 Basic Auth (httpNodeAuth)
     // JWT 认证由 flows/auth.json 中的 Flow 实现：

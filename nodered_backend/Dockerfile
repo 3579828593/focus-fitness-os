@@ -21,11 +21,12 @@ EXPOSE 1880
 # 环境变量默认值
 ENV FLOWS=/data/flows/flows.json \
     TZ=Asia/Shanghai \
-    NODE_RED_SECRET=dev-secret-change-in-prod
+    NODE_RED_SECRET=dev-secret-change-in-prod \
+    PORT=1880
 
-# 健康检查 (每30秒检查一次)
+# 健康检查 (每30秒检查一次, 支持动态端口)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-    CMD wget -q --spider http://localhost:1880/ || exit 1
+    CMD wget -q --spider http://localhost:${PORT:-1880}/ || exit 1
 
 # 清除基础镜像的 ENTRYPOINT (entrypoint.sh 在容器中找不到)
 ENTRYPOINT []
