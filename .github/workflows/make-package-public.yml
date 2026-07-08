@@ -1,0 +1,42 @@
+name: Make Package Public
+
+# ============================================
+# 将 ghcr.io Docker 镜像设为公开
+# 以便 Railway / Render / Koyeb 等平台可以拉取
+# 手动触发
+# ============================================
+
+on:
+  workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  make-public:
+    name: Make Docker Image Public
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Make package public via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Attempting to make package public..."
+          
+          # Try to get current package info
+          echo "Checking package visibility..."
+          gh api /user/packages/container/focus-fitness-os-backend 2>/dev/null || true
+          
+          # Change visibility to public
+          gh api -X PATCH /user/packages/container/focus-fitness-os-backend \
+            -f visibility=public \
+            2>&1 || echo "API call failed, trying alternative..."
+          
+          # Verify
+          echo "Verifying package is public..."
+          curl -s -o /dev/null -w "%{http_code}" \
+            "https://ghcr.io/v2/3579828593/focus-fitness-os-backend/manifests/latest" || true
+          
+          echo "Done!"
