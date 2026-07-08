@@ -1,10 +1,5 @@
 name: Publish Docker Image
 
-# ============================================
-# 构建 Node-RED 后端 Docker 镜像并推送到 ghcr.io
-# 触发: push 到 master 或 v* 标签
-# ============================================
-
 on:
   push:
     branches: [master]
@@ -19,11 +14,10 @@ jobs:
   build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU (for multi-arch builds)
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -46,7 +40,7 @@ jobs:
             type=ref,event=tag
             type=sha
 
-      - name: Build and push (multi-arch: amd64 + arm64)
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: ./nodered_backend
@@ -55,5 +49,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
