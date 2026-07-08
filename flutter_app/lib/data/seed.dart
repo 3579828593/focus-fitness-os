@@ -36,7 +36,7 @@ Future<void> seedDatabase(AppDatabase db) async {
 
   await db.into(db.learningTaskExts).insert(
         LearningTaskExtsCompanion.insert(
-          unitId: learningUnitId,
+          unitId: Value(learningUnitId),
           taskKind: 'READING',
           focusMinutes: Value(25),
           breakMinutes: Value(5),
@@ -56,7 +56,7 @@ Future<void> seedDatabase(AppDatabase db) async {
 
   await db.into(db.workoutPlanExts).insert(
         WorkoutPlanExtsCompanion.insert(
-          unitId: workoutUnitId,
+          unitId: Value(workoutUnitId),
           workoutKind: 'PUSH',
           targetMuscle: Value('胸/肩/三头'),
         ),

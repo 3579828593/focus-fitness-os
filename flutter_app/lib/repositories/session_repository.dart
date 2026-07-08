@@ -26,7 +26,7 @@ class SessionRepository {
     final sessionId = await _sessionDao.createSession(
       SessionsCompanion.insert(
         entryId: entryId,
-        state: const Constant('CREATED'),
+        state: Value('CREATED'),
         createdAt: Value(now),
         startedAt: Value(now),
       ),

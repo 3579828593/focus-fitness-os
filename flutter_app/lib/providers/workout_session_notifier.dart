@@ -250,8 +250,8 @@ class WorkoutSessionNotifier extends Notifier<WorkoutSessionState> {
     final segments = runner.segments
         .map((seg) => SessionSegmentsCompanion.insert(
               sessionId: sessionId,
-              segType: Value(seg.segTypeString),
-              plannedSeconds: Value(seg.plannedSeconds),
+              segType: seg.segTypeString,
+              plannedSeconds: seg.plannedSeconds,
               actualSeconds: Value(seg.actualSeconds),
               repsDone: seg.repsDone != null
                   ? Value(seg.repsDone!)

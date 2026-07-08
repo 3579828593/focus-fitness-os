@@ -126,7 +126,7 @@ class ScheduleScreen extends HookConsumerWidget {
                     unitId: unitId,
                     date: date,
                     startTime: '09:00',
-                    execMode: const Constant('FOCUS'),
+                    execMode: 'FOCUS',
                   ),
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
@@ -158,7 +158,7 @@ class ScheduleScreen extends HookConsumerWidget {
                     unitId: unitId,
                     date: date,
                     startTime: '18:00',
-                    execMode: const Constant('WORKOUT'),
+                    execMode: 'WORKOUT',
                   ),
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
