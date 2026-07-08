@@ -178,7 +178,7 @@ void main() {
       final opLogDao = OpLogDao(db);
       final unsynced = await opLogDao.getUnsynced();
       expect(unsynced.length, greaterThan(0));
-      expect(unsynced.first.tableName, 'sessions');
+      expect(unsynced.first.tblName, 'sessions');
     });
   });
 }

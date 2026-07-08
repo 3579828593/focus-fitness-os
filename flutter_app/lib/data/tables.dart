@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 /// ============================================================
 /// 七表统一数据模型 + 辅助表 (goal, streak, op_log)
 /// 设计原则: 日程层统一、内容层分流、执行层统一、细节层分流
+/// 注意: autoIncrement() 自动设为主键, 不需要 override primaryKey
 /// ============================================================
 
 /// 表1: 内容根表 (学习任务/健身计划 统一)
@@ -65,9 +66,6 @@ class WorkoutExercises extends Table {
       const Constant('2026-01-01T00:00:00'))();
   TextColumn get updatedAt => text().nullable()();
   TextColumn get deletedAt => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {exerciseId};
 }
 
 /// 表5: 日程行 (统一, 可打开)
@@ -84,9 +82,6 @@ class ScheduleEntries extends Table {
       const Constant('2026-01-01T00:00:00'))();
   TextColumn get updatedAt => text().nullable()();
   TextColumn get deletedAt => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {entryId};
 }
 
 /// 表6: 执行会话 (通用状态机)
@@ -106,9 +101,6 @@ class Sessions extends Table {
       const Constant('2026-01-01T00:00:00'))();
   TextColumn get updatedAt => text().nullable()();
   TextColumn get deletedAt => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {sessionId};
 }
 
 /// 表7: 执行片段 (分流: 番茄块/健身组)
@@ -126,9 +118,6 @@ class SessionSegments extends Table {
       const Constant('2026-01-01T00:00:00'))();
   TextColumn get updatedAt => text().nullable()();
   TextColumn get deletedAt => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {segmentId};
 }
 
 /// 表8: 目标 (OKR, 跨域聚合)
@@ -143,9 +132,6 @@ class Goals extends Table {
       const Constant('2026-01-01T00:00:00'))();
   TextColumn get updatedAt => text().nullable()();
   TextColumn get deletedAt => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {goalId};
 }
 
 /// 表9: 连续记录 (派生)
@@ -160,9 +146,6 @@ class Streaks extends Table {
       const Constant('2026-01-01T00:00:00'))();
   TextColumn get updatedAt => text().nullable()();
   TextColumn get deletedAt => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {streakId};
 }
 
 /// 表10: 操作日志 (同步用)
@@ -177,7 +160,4 @@ class OpLogs extends Table {
   BoolColumn get synced => boolean().withDefault(const Constant(false))();
   TextColumn get deviceId => text().nullable()(); // 操作来源设备标识
   IntColumn get lamportClock => integer().withDefault(const Constant(0))(); // Lamport 逻辑时钟
-
-  @override
-  Set<Column> get primaryKey => {opId};
 }
