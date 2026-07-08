@@ -8,9 +8,9 @@ name: Focus Fitness OS CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main, master, develop]
 
 jobs:
   # ============================================
@@ -100,13 +100,19 @@ jobs:
             node -e "require('./$f')" 2>/dev/null || echo "Warning: $f exports no module"
           done
 
+      - name: Install mocha for tests
+        run: npm install --save-dev mocha
+
+      - name: Run Node-RED function tests
+        run: npx mocha test/**/*.test.js --timeout 5000
+
   # ============================================
   # Docker 镜像构建 (仅 main 分支)
   # ============================================
   docker-build:
     name: Docker Image Build
     needs: [flutter-test, nodered-validate]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     defaults:
       run:
