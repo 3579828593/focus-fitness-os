@@ -39,6 +39,9 @@ jobs:
       - name: Get Flutter version
         run: flutter --version
 
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --project-name=focus_fitness_os .
+
       - name: Install dependencies
         run: flutter pub get
 
