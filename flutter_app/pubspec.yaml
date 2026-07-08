@@ -1,0 +1,34 @@
+name: focus_fitness_os
+description: 备考×健身×规则编排 全栈应用
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  drift: ^2.20.0
+  sqlite3_flutter_libs: ^0.5.0
+  riverpod: ^2.5.0
+  hooks_riverpod: ^2.5.0
+  go_router: ^14.0.0
+  flutter_tts: ^4.2.5
+  flutter_foreground_task: ^9.2.2
+  http: ^1.2.0
+  intl: ^0.19.0
+  shared_preferences: ^2.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  drift_dev: ^2.20.0
+  build_runner: ^2.4.0
+  custom_lint: ^0.6.0
+  riverpod_lint: ^2.3.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "flow1_daily_reminder",
+    "type": "tab",
+    "label": "Flow1: 每日提醒",
+    "disabled": false,
+    "info": "每日18:00读取明日日程，生成提醒文本，推送Telegram通知"
+  },
+  {
+    "id": "f1_cron",
+    "type": "cron-plus",
+    "z": "flow1_daily_reminder",
+    "name": "每日18:00",
+    "config": {
+      "expression": "0 18 * * *",
+      "timezone": "Asia/Shanghai"
+    },
+    "wires": [["f1_read_schedule"]]
+  },
+  {
+    "id": "f1_read_schedule",
+    "type": "sqlite",
+    "z": "flow1_daily_reminder",
+    "name": "读取明日日程",
+    "mode": "prepared",
+    "sql": "SELECT se.entry_id, se.date, se.start_time, se.exec_mode, eu.title FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = date('now', '+1 day') ORDER BY se.start_time ASC",
+    "wires": [["f1_check_empty"]]
+  },
+  {
+    "id": "f1_check_empty",
+    "type": "switch",
+    "z": "flow1_daily_reminder",
+    "name": "检查日程数",
+    "property": "payload.length",
+    "rules": [
+      { "t": "gt", "v": 0, "vt": "num" },
+      { "t": "else" }
+    ],
+    "wires": [["f1_build_reminder"], ["f1_build_empty"]]
+  },
+  {
+    "id": "f1_build_reminder",
+    "type": "function",
+    "z": "flow1_daily_reminder",
+    "name": "生成提醒文本",
+    "func": "var entries = msg.payload;\nvar text = '📋 明日日程提醒\\n\\n';\nentries.forEach(function(e, i) {\n  var icon = e.exec_mode === 'WORKOUT' ? '💪' : '📚';\n  text += (i+1) + '. ' + icon + ' ' + e.start_time + ' ' + e.title + '\\n';\n});\nmsg.payload = text;\nreturn msg;",
+    "wires": [["f1_telegram"]]
+  },
+  {
+    "id": "f1_build_empty",
+    "type": "function",
+    "z": "flow1_daily_reminder",
+    "name": "生成空闲建议",
+    "func": "msg.payload = '📅 明日暂无安排，建议安排训练或学习计划';\nreturn msg;",
+    "wires": [["f1_telegram"]]
+  },
+  {
+    "id": "f1_telegram",
+    "type": "telegram sender",
+    "z": "flow1_daily_reminder",
+    "name": "Telegram推送",
+    "bot": "f1_bot_config",
+    "chatId": "",
+    "wires": [[]]
+  },
+  {
+    "id": "f1_bot_config",
+    "type": "telegram config",
+    "z": "flow1_daily_reminder",
+    "botname": "FocusFitnessBot",
+    "usernames": "",
+    "chatids": "",
+    "baseapiurl": "",
+    "updatemode": "polling",
+    "pollinterval": "300",
+    "tries": "5",
+    "server": ""
+  }
+]

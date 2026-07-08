@@ -1,0 +1,76 @@
+[
+  {
+    "id": "flow3_weekly_report",
+    "type": "tab",
+    "label": "Flow3: 周报复盘",
+    "disabled": false,
+    "info": "每周日21:00聚合本周训练+学习数据 → 生成周报 → 邮件+Pushover推送"
+  },
+  {
+    "id": "f3_cron",
+    "type": "cron-plus",
+    "z": "flow3_weekly_report",
+    "name": "每周日21:00",
+    "config": {
+      "expression": "0 21 * * 0",
+      "timezone": "Asia/Shanghai"
+    },
+    "wires": [["f3_calc_date_range"]]
+  },
+  {
+    "id": "f3_calc_date_range",
+    "type": "function",
+    "z": "flow3_weekly_report",
+    "name": "计算本周日期范围",
+    "func": "var now = new Date();\nvar dayOfWeek = now.getDay(); // 0=周日\nvar monday = new Date(now);\nmonday.setDate(now.getDate() - dayOfWeek + 1);\nvar sunday = new Date(monday);\nsunday.setDate(monday.getDate() + 6);\n\nfunction fmt(d) {\n  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);\n}\n\nmsg.start_date = fmt(monday) + 'T00:00:00';\nmsg.end_date = fmt(sunday) + 'T23:59:59';\nmsg.week_label = now.getFullYear() + '-W' + getWeekNumber(now);\nreturn msg;\n\nfunction getWeekNumber(d) {\n  d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));\n  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));\n  var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));\n  return Math.ceil((((d - yearStart) / 86400000) + 1)/7);\n}",
+    "wires": [["f3_query_sessions"]]
+  },
+  {
+    "id": "f3_query_sessions",
+    "type": "sqlite",
+    "z": "flow3_weekly_report",
+    "name": "查询本周会话",
+    "mode": "prepared",
+    "sql": "SELECT s.*, se.exec_mode, se.unit_id FROM sessions s JOIN schedule_entries se ON s.entry_id = se.entry_id WHERE s.started_at >= ? AND s.started_at <= ?",
+    "wires": [["f3_aggregate"]]
+  },
+  {
+    "id": "f3_aggregate",
+    "type": "function",
+    "z": "flow3_weekly_report",
+    "name": "聚合统计数据",
+    "func": "var sessions = msg.payload || [];\n\nvar focusSessions = sessions.filter(function(s) { return s.exec_mode === 'FOCUS'; });\nvar workoutSessions = sessions.filter(function(s) { return s.exec_mode === 'WORKOUT'; });\n\nvar totalFocusMinutes = focusSessions.reduce(function(sum, s) {\n  return sum + (s.completion_ratio || 0) * 25; // 每个番茄约25分钟\n}, 0);\n\nvar completedWorkouts = workoutSessions.filter(function(s) {\n  return s.state === 'COMPLETED';\n}).length;\n\nvar avgCompletion = sessions.length > 0 ?\n  sessions.reduce(function(sum, s) { return sum + (s.completion_ratio || 0); }, 0) / sessions.length : 0;\n\nvar report = '📊 第' + msg.week_label + '周 复盘报告\\n\\n';\nreport += '━━━ 专注学习 ━━━\\n';\nreport += '番茄完成: ' + focusSessions.length + ' 次\\n';\nreport += '专注时长: ' + Math.round(totalFocusMinutes) + ' 分钟\\n\\n';\nreport += '━━━ 健身训练 ━━━\\n';\nreport += '完成训练: ' + completedWorkouts + ' 次\\n';\nreport += '平均完成率: ' + (avgCompletion * 100).toFixed(0) + '%\\n\\n';\nreport += '💪 下周继续加油！';\n\nmsg.payload = report;\nreturn msg;",
+    "wires": [["f3_email", "f3_pushover"]]
+  },
+  {
+    "id": "f3_email",
+    "type": "e-mail",
+    "z": "flow3_weekly_report",
+    "name": "邮件推送周报",
+    "server": "smtp.gmail.com",
+    "port": "465",
+    "secure": true,
+    "tls": true,
+    "userid": "",
+    "password": "",
+    "to": "",
+    "from": "",
+    "subject": "每周复盘报告",
+    "wires": [[]]
+  },
+  {
+    "id": "f3_pushover",
+    "type": "pushover",
+    "z": "flow3_weekly_report",
+    "name": "Pushover推送",
+    "device": "",
+    "priority": 0,
+    "sound": "",
+    "url": "",
+    "url_title": "",
+    "deviceid": "",
+    "prio": "0",
+    "title": "每周复盘报告",
+    "wires": [[]]
+  }
+]

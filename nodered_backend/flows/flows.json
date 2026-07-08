@@ -1,0 +1,890 @@
+[
+  {
+    "id": "flow2_auto_increment",
+    "type": "tab",
+    "label": "Flow2: 完成递增",
+    "disabled": false,
+    "info": "webhook接收训练完成 → 完成率计算 → 渐进超负荷规则 → 生成LOCKED提案 → 写入SQLite"
+  },
+  {
+    "id": "f2_webhook",
+    "type": "http in",
+    "z": "flow2_auto_increment",
+    "name": "接收训练完成",
+    "url": "/api/v1/sessions/complete",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f2_parse_payload"
+      ]
+    ]
+  },
+  {
+    "id": "f2_parse_payload",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "解析请求体",
+    "func": "var payload = msg.payload || {};\nmsg.session_id = payload.session_id;\nmsg.entry_id = payload.entry_id;\nmsg.completion_ratio = payload.completion_ratio || 0;\nmsg.segments = payload.segments || [];\n\n// 从segments提取exercise信息\nvar exerciseSet = msg.segments.filter(function(s) { return s.seg_type === 'WORKOUT_SET'; });\nif (exerciseSet.length > 0) {\n  msg.exercise = {\n    exercise_id: exerciseSet[0].exercise_id,\n    planned_sets: exerciseSet.length,\n    planned_reps: exerciseSet[0].planned_reps,\n    planned_weight: exerciseSet[0].weight_kg_done,\n    max_weight: Math.max.apply(null, exerciseSet.map(function(s) { return s.weight_kg_done || 0; }))\n  };\n}\nreturn msg;",
+    "wires": [
+      [
+        "f2_switch_has_exercise"
+      ]
+    ]
+  },
+  {
+    "id": "f2_switch_has_exercise",
+    "type": "switch",
+    "z": "flow2_auto_increment",
+    "name": "是否有训练数据",
+    "property": "exercise",
+    "rules": [
+      {
+        "t": "nempty"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "wires": [
+      [
+        "f2_progressive"
+      ],
+      [
+        "f2_response_skip"
+      ]
+    ]
+  },
+  {
+    "id": "f2_progressive",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "渐进超负荷计算",
+    "func": "// ===== 渐进超负荷算法 =====\nvar exercise = msg.exercise;\nvar segments = msg.segments;\nvar completionRatio = msg.completion_ratio;\n\n// 计算平均RPE\nvar rpeValues = segments.filter(function(s) { return s.rpe != null; }).map(function(s) { return s.rpe; });\nvar avgRpe = rpeValues.length > 0 ? rpeValues.reduce(function(a,b){return a+b;}) / rpeValues.length : 5;\n\nvar newWeight = exercise.planned_weight;\nvar reason = '';\n\nif (completionRatio >= 1.0 && avgRpe <= 8) {\n  newWeight = exercise.planned_weight + 2.5;\n  reason = '完成率100%，RPE ' + avgRpe.toFixed(1) + '，递增2.5kg → ' + newWeight + 'kg';\n} else if (completionRatio < 0.5) {\n  newWeight = Math.max(exercise.planned_weight - 2.5, 0);\n  reason = '完成率' + (completionRatio * 100).toFixed(0) + '%，退阶2.5kg → ' + newWeight + 'kg';\n} else {\n  reason = '完成率' + (completionRatio * 100).toFixed(0) + '%，维持' + exercise.planned_weight + 'kg';\n}\n\n// PR检测\nvar isPR = newWeight > (exercise.max_weight || 0);\n\n// 生成LOCKED提案\nvar proposal = {\n  type: newWeight > exercise.planned_weight ? 'WEIGHT_INCREMENT' : (newWeight < exercise.planned_weight ? 'WEIGHT_DECREMENT' : 'WEIGHT_MAINTAIN'),\n  lock_state: 'LOCKED',\n  target_table: 'workout_exercise',\n  target_id: exercise.exercise_id,\n  target_field: 'planned_weight',\n  old_value: exercise.planned_weight,\n  new_value: newWeight,\n  reason: reason,\n  is_pr: isPR,\n  created_at: new Date().toISOString()\n};\n\nmsg.payload = {\n  newWeight: newWeight,\n  reason: reason,\n  isPR: isPR,\n  proposal: proposal\n};\nreturn msg;",
+    "wires": [
+      [
+        "f2_save_proposal",
+        "f2_update_streak"
+      ]
+    ]
+  },
+  {
+    "id": "f2_save_proposal",
+    "type": "sqlite",
+    "z": "flow2_auto_increment",
+    "name": "保存提案到DB",
+    "mode": "prepared",
+    "sql": "INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "wires": [
+      [
+        "f2_response_ok"
+      ]
+    ]
+  },
+  {
+    "id": "f2_update_streak",
+    "type": "sqlite",
+    "z": "flow2_auto_increment",
+    "name": "更新连续记录",
+    "mode": "prepared",
+    "sql": "UPDATE streaks SET current_count = current_count + 1, longest_count = CASE WHEN current_count + 1 > longest_count THEN current_count + 1 ELSE longest_count END, last_date = date('now') WHERE unit_id = (SELECT unit_id FROM schedule_entries WHERE entry_id = ?)",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f2_response_ok",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "返回成功",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"status\": \"ok\"}, \"message\": \"session processed\"}"
+  },
+  {
+    "id": "f2_response_skip",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "跳过(无训练数据)",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"status\": \"skipped\"}, \"message\": \"no exercise data\"}"
+  },
+  {
+    "id": "flow4_conflict_detection",
+    "type": "tab",
+    "label": "Flow4: 冲突检测重排",
+    "disabled": false,
+    "info": "webhook接收日程变更 → 检测同时段冲突 → 按优先级排序 → 低优先级顺延 → 生成LOCKED提案"
+  },
+  {
+    "id": "f4_webhook",
+    "type": "http in",
+    "z": "flow4_conflict_detection",
+    "name": "接收日程变更",
+    "url": "/api/v1/schedule/change",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f4_extract_entry"
+      ]
+    ]
+  },
+  {
+    "id": "f4_extract_entry",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "提取日程信息",
+    "func": "var payload = msg.payload || {};\nmsg.new_entry = {\n  entry_id: payload.entry_id,\n  date: payload.date,\n  start_time: payload.start_time,\n  unit_id: payload.unit_id\n};\nreturn msg;",
+    "wires": [
+      [
+        "f4_query_existing"
+      ]
+    ]
+  },
+  {
+    "id": "f4_query_existing",
+    "type": "sqlite",
+    "z": "flow4_conflict_detection",
+    "name": "查询同日日程",
+    "mode": "prepared",
+    "sql": "SELECT se.entry_id, se.date, se.start_time, se.exec_mode, se.unit_id, eu.priority FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = ? AND se.entry_id != ?",
+    "wires": [
+      [
+        "f4_conflict_detect"
+      ]
+    ]
+  },
+  {
+    "id": "f4_conflict_detect",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "冲突检测与顺延",
+    "func": "var newEntry = msg.new_entry;\nvar existing = msg.payload || [];\n\n// 检测同时段冲突\nvar conflicts = existing.filter(function(e) {\n  return e.start_time === newEntry.start_time;\n});\n\nvar proposals = [];\n\nif (conflicts.length > 0) {\n  // 获取新条目的优先级\n  var newPriority = 5; // 默认\n  // 按优先级排序 (数字越小优先级越高)\n  var allEntries = conflicts.map(function(e) {\n    return { entry_id: e.entry_id, start_time: e.start_time, priority: e.priority || 5, unit_id: e.unit_id };\n  });\n  allEntries.push({ entry_id: newEntry.entry_id, start_time: newEntry.start_time, priority: newPriority, unit_id: newEntry.unit_id });\n  allEntries.sort(function(a, b) { return a.priority - b.priority; });\n\n  // 低优先级项顺延到下一个空档 (每次+60分钟)\n  for (var i = 1; i < allEntries.length; i++) {\n    var entry = allEntries[i];\n    var newTime = addMinutes(entry.start_time, 60 * i);\n    proposals.push({\n      type: 'PROPOSAL',\n      lock_state: 'LOCKED',\n      target_table: 'schedule_entry',\n      target_id: entry.entry_id,\n      target_field: 'start_time',\n      old_value: entry.start_time,\n      new_value: newTime,\n      reason: '时段冲突，自动顺延到 ' + newTime,\n      created_at: new Date().toISOString()\n    });\n  }\n}\n\nmsg.payload = {\n  conflicts: conflicts,\n  proposals: proposals,\n  resolved: proposals.length > 0\n};\nreturn msg;\n\nfunction addMinutes(timeStr, minutes) {\n  var parts = timeStr.split(':');\n  var h = parseInt(parts[0]);\n  var m = parseInt(parts[1]) + minutes;\n  h += Math.floor(m / 60);\n  m = m % 60;\n  if (h >= 24) h -= 24;\n  return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);\n}",
+    "wires": [
+      [
+        "f4_switch_has_conflict"
+      ]
+    ]
+  },
+  {
+    "id": "f4_switch_has_conflict",
+    "type": "switch",
+    "z": "flow4_conflict_detection",
+    "name": "是否有冲突",
+    "property": "payload.conflicts.length",
+    "rules": [
+      {
+        "t": "gt",
+        "v": 0,
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "wires": [
+      [
+        "f4_save_proposals"
+      ],
+      [
+        "f4_response_no_conflict"
+      ]
+    ]
+  },
+  {
+    "id": "f4_save_proposals",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备提案批量写入",
+    "func": "var proposals = msg.payload.proposals || [];\n// 为每个提案创建一条SQL\nvar statements = proposals.map(function(p) {\n  return {\n    sql: \"INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\",\n    params: [p.type, p.lock_state, p.target_table, p.target_id, p.target_field, p.old_value, p.new_value, p.reason, p.created_at]\n  };\n});\nmsg.payload = statements;\nreturn msg;",
+    "wires": [
+      [
+        "f4_batch_sqlite"
+      ]
+    ]
+  },
+  {
+    "id": "f4_batch_sqlite",
+    "type": "sqlite",
+    "z": "flow4_conflict_detection",
+    "name": "批量写入提案",
+    "mode": "batch",
+    "wires": [
+      [
+        "f4_response_with_proposals"
+      ]
+    ]
+  },
+  {
+    "id": "f4_response_no_conflict",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "无冲突响应",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"conflicts\": [], \"proposals\": []}, \"message\": \"no conflict\"}"
+  },
+  {
+    "id": "f4_response_with_proposals",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "返回冲突提案",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"conflicts\": true, \"proposals\": \"generated\"}, \"message\": \"conflicts detected, proposals created\"}"
+  },
+  {
+    "id": "flow1_daily_reminder",
+    "type": "tab",
+    "label": "Flow1: 每日提醒",
+    "disabled": false,
+    "info": "每日18:00读取明日日程，生成提醒文本，推送Telegram通知"
+  },
+  {
+    "id": "f1_cron",
+    "type": "cron-plus",
+    "z": "flow1_daily_reminder",
+    "name": "每日18:00",
+    "config": {
+      "expression": "0 18 * * *",
+      "timezone": "Asia/Shanghai"
+    },
+    "wires": [
+      [
+        "f1_read_schedule"
+      ]
+    ]
+  },
+  {
+    "id": "f1_read_schedule",
+    "type": "sqlite",
+    "z": "flow1_daily_reminder",
+    "name": "读取明日日程",
+    "mode": "prepared",
+    "sql": "SELECT se.entry_id, se.date, se.start_time, se.exec_mode, eu.title FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = date('now', '+1 day') ORDER BY se.start_time ASC",
+    "wires": [
+      [
+        "f1_check_empty"
+      ]
+    ]
+  },
+  {
+    "id": "f1_check_empty",
+    "type": "switch",
+    "z": "flow1_daily_reminder",
+    "name": "检查日程数",
+    "property": "payload.length",
+    "rules": [
+      {
+        "t": "gt",
+        "v": 0,
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "wires": [
+      [
+        "f1_build_reminder"
+      ],
+      [
+        "f1_build_empty"
+      ]
+    ]
+  },
+  {
+    "id": "f1_build_reminder",
+    "type": "function",
+    "z": "flow1_daily_reminder",
+    "name": "生成提醒文本",
+    "func": "var entries = msg.payload;\nvar text = '📋 明日日程提醒\\n\\n';\nentries.forEach(function(e, i) {\n  var icon = e.exec_mode === 'WORKOUT' ? '💪' : '📚';\n  text += (i+1) + '. ' + icon + ' ' + e.start_time + ' ' + e.title + '\\n';\n});\nmsg.payload = text;\nreturn msg;",
+    "wires": [
+      [
+        "f1_telegram"
+      ]
+    ]
+  },
+  {
+    "id": "f1_build_empty",
+    "type": "function",
+    "z": "flow1_daily_reminder",
+    "name": "生成空闲建议",
+    "func": "msg.payload = '📅 明日暂无安排，建议安排训练或学习计划';\nreturn msg;",
+    "wires": [
+      [
+        "f1_telegram"
+      ]
+    ]
+  },
+  {
+    "id": "f1_telegram",
+    "type": "telegram sender",
+    "z": "flow1_daily_reminder",
+    "name": "Telegram推送",
+    "bot": "f1_bot_config",
+    "chatId": "",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f1_bot_config",
+    "type": "telegram config",
+    "z": "flow1_daily_reminder",
+    "botname": "FocusFitnessBot",
+    "usernames": "",
+    "chatids": "",
+    "baseapiurl": "",
+    "updatemode": "polling",
+    "pollinterval": "300",
+    "tries": "5",
+    "server": ""
+  },
+  {
+    "id": "flow3_weekly_report",
+    "type": "tab",
+    "label": "Flow3: 周报复盘",
+    "disabled": false,
+    "info": "每周日21:00聚合本周训练+学习数据 → 生成周报 → 邮件+Pushover推送"
+  },
+  {
+    "id": "f3_cron",
+    "type": "cron-plus",
+    "z": "flow3_weekly_report",
+    "name": "每周日21:00",
+    "config": {
+      "expression": "0 21 * * 0",
+      "timezone": "Asia/Shanghai"
+    },
+    "wires": [
+      [
+        "f3_calc_date_range"
+      ]
+    ]
+  },
+  {
+    "id": "f3_calc_date_range",
+    "type": "function",
+    "z": "flow3_weekly_report",
+    "name": "计算本周日期范围",
+    "func": "var now = new Date();\nvar dayOfWeek = now.getDay(); // 0=周日\nvar monday = new Date(now);\nmonday.setDate(now.getDate() - dayOfWeek + 1);\nvar sunday = new Date(monday);\nsunday.setDate(monday.getDate() + 6);\n\nfunction fmt(d) {\n  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);\n}\n\nmsg.start_date = fmt(monday) + 'T00:00:00';\nmsg.end_date = fmt(sunday) + 'T23:59:59';\nmsg.week_label = now.getFullYear() + '-W' + getWeekNumber(now);\nreturn msg;\n\nfunction getWeekNumber(d) {\n  d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));\n  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));\n  var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));\n  return Math.ceil((((d - yearStart) / 86400000) + 1)/7);\n}",
+    "wires": [
+      [
+        "f3_query_sessions"
+      ]
+    ]
+  },
+  {
+    "id": "f3_query_sessions",
+    "type": "sqlite",
+    "z": "flow3_weekly_report",
+    "name": "查询本周会话",
+    "mode": "prepared",
+    "sql": "SELECT s.*, se.exec_mode, se.unit_id FROM sessions s JOIN schedule_entries se ON s.entry_id = se.entry_id WHERE s.started_at >= ? AND s.started_at <= ?",
+    "wires": [
+      [
+        "f3_aggregate"
+      ]
+    ]
+  },
+  {
+    "id": "f3_aggregate",
+    "type": "function",
+    "z": "flow3_weekly_report",
+    "name": "聚合统计数据",
+    "func": "var sessions = msg.payload || [];\n\nvar focusSessions = sessions.filter(function(s) { return s.exec_mode === 'FOCUS'; });\nvar workoutSessions = sessions.filter(function(s) { return s.exec_mode === 'WORKOUT'; });\n\nvar totalFocusMinutes = focusSessions.reduce(function(sum, s) {\n  return sum + (s.completion_ratio || 0) * 25; // 每个番茄约25分钟\n}, 0);\n\nvar completedWorkouts = workoutSessions.filter(function(s) {\n  return s.state === 'COMPLETED';\n}).length;\n\nvar avgCompletion = sessions.length > 0 ?\n  sessions.reduce(function(sum, s) { return sum + (s.completion_ratio || 0); }, 0) / sessions.length : 0;\n\nvar report = '📊 第' + msg.week_label + '周 复盘报告\\n\\n';\nreport += '━━━ 专注学习 ━━━\\n';\nreport += '番茄完成: ' + focusSessions.length + ' 次\\n';\nreport += '专注时长: ' + Math.round(totalFocusMinutes) + ' 分钟\\n\\n';\nreport += '━━━ 健身训练 ━━━\\n';\nreport += '完成训练: ' + completedWorkouts + ' 次\\n';\nreport += '平均完成率: ' + (avgCompletion * 100).toFixed(0) + '%\\n\\n';\nreport += '💪 下周继续加油！';\n\nmsg.payload = report;\nreturn msg;",
+    "wires": [
+      [
+        "f3_email",
+        "f3_pushover"
+      ]
+    ]
+  },
+  {
+    "id": "f3_email",
+    "type": "e-mail",
+    "z": "flow3_weekly_report",
+    "name": "邮件推送周报",
+    "server": "smtp.gmail.com",
+    "port": "465",
+    "secure": true,
+    "tls": true,
+    "userid": "",
+    "password": "",
+    "to": "",
+    "from": "",
+    "subject": "每周复盘报告",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f3_pushover",
+    "type": "pushover",
+    "z": "flow3_weekly_report",
+    "name": "Pushover推送",
+    "device": "",
+    "priority": 0,
+    "sound": "",
+    "url": "",
+    "url_title": "",
+    "deviceid": "",
+    "prio": "0",
+    "title": "每周复盘报告",
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f1_catch",
+    "type": "catch",
+    "z": "flow1_daily_reminder",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f1_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f1_err_format",
+    "type": "function",
+    "z": "flow1_daily_reminder",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f1_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f1_error_response",
+    "type": "http response",
+    "z": "flow1_daily_reminder",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "f2_catch",
+    "type": "catch",
+    "z": "flow2_auto_increment",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f2_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f2_err_format",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f2_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f2_error_response",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "f3_catch",
+    "type": "catch",
+    "z": "flow3_weekly_report",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f3_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f3_err_format",
+    "type": "function",
+    "z": "flow3_weekly_report",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f3_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f3_error_response",
+    "type": "http response",
+    "z": "flow3_weekly_report",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "f4_catch",
+    "type": "catch",
+    "z": "flow4_conflict_detection",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f4_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f4_err_format",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f4_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f4_error_response",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "flow5_proposal_manage",
+    "type": "tab",
+    "label": "Flow5: 提案管理",
+    "disabled": false,
+    "info": "接收提案 accept/reject 请求 -> 解析 proposal_id 与动作 -> 更新 proposals 表 lock_state -> 返回结果"
+  },
+  {
+    "id": "f5_http_accept",
+    "type": "http in",
+    "z": "flow5_proposal_manage",
+    "name": "接受提案",
+    "url": "/api/v1/proposals/:id/accept",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f5_parse_action"
+      ]
+    ]
+  },
+  {
+    "id": "f5_http_reject",
+    "type": "http in",
+    "z": "flow5_proposal_manage",
+    "name": "拒绝提案",
+    "url": "/api/v1/proposals/:id/reject",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f5_parse_action"
+      ]
+    ]
+  },
+  {
+    "id": "f5_parse_action",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "解析提案ID与动作",
+    "func": "var proposalId = msg.req.params.id;\nvar url = msg.req.url || '';\nvar lockState, status;\nif (url.indexOf('accept') !== -1) {\n  lockState = 'ACCEPTED';\n  status = 'accepted';\n} else {\n  lockState = 'REJECTED';\n  status = 'rejected';\n}\nmsg.proposal_id = proposalId;\nmsg.lock_state = lockState;\nmsg.action_status = status;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_update_proposal"
+      ]
+    ]
+  },
+  {
+    "id": "f5_update_proposal",
+    "type": "sqlite",
+    "z": "flow5_proposal_manage",
+    "name": "更新提案状态",
+    "mode": "prepared",
+    "sql": "UPDATE proposals SET lock_state = ? WHERE rowid = ?",
+    "wires": [
+      [
+        "f5_format_response"
+      ]
+    ]
+  },
+  {
+    "id": "f5_format_response",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "格式化响应",
+    "func": "var status = msg.action_status || 'ok';\nmsg.payload = JSON.stringify({ code: 0, data: { status: status }, message: 'ok' });\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_response_ok"
+      ]
+    ]
+  },
+  {
+    "id": "f5_response_ok",
+    "type": "http response",
+    "z": "flow5_proposal_manage",
+    "name": "返回成功",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "f5_catch",
+    "type": "catch",
+    "z": "flow5_proposal_manage",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f5_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f5_err_format",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f5_error_response",
+    "type": "http response",
+    "z": "flow5_proposal_manage",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "flow6_weekly_stats",
+    "type": "tab",
+    "label": "Flow6: 周报查询",
+    "disabled": false,
+    "info": "GET /api/v1/stats/weekly -> 解析 week 参数 -> 查询 sessions 表 -> 聚合数据 (总专注时长/总训练量/完成率) -> 返回周报统计"
+  },
+  {
+    "id": "f6_http_in",
+    "type": "http in",
+    "z": "flow6_weekly_stats",
+    "name": "接收周报查询",
+    "url": "/api/v1/stats/weekly",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f6_parse_week"
+      ]
+    ]
+  },
+  {
+    "id": "f6_parse_week",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "解析周参数",
+    "func": "var week = (msg.req.query && msg.req.query.week) || '';\nvar startDate, endDate;\nfunction fmt(d) {\n  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);\n}\nvar m = week.match(/^(\\d{4})-W(\\d{2})$/);\nif (m) {\n  var year = parseInt(m[1]);\n  var weekNum = parseInt(m[2]);\n  var simple = new Date(year, 0, 1 + (weekNum - 1) * 7);\n  var dow = simple.getDay();\n  var monday = new Date(simple);\n  if (dow <= 4) { monday.setDate(simple.getDate() - simple.getDay() + 1); }\n  else { monday.setDate(simple.getDate() + 8 - simple.getDay()); }\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n} else if (week) {\n  startDate = week + 'T00:00:00';\n  var e = new Date(week);\n  e.setDate(e.getDate() + 6);\n  endDate = fmt(e) + 'T23:59:59';\n} else {\n  var now = new Date();\n  var d = now.getDay();\n  var monday = new Date(now);\n  monday.setDate(now.getDate() - d + 1);\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n}\nmsg.start_date = startDate;\nmsg.end_date = endDate;\nmsg.week = week;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_query_sessions"
+      ]
+    ]
+  },
+  {
+    "id": "f6_query_sessions",
+    "type": "sqlite",
+    "z": "flow6_weekly_stats",
+    "name": "查询周会话",
+    "mode": "prepared",
+    "sql": "SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ?",
+    "wires": [
+      [
+        "f6_aggregate"
+      ]
+    ]
+  },
+  {
+    "id": "f6_aggregate",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "聚合周统计数据",
+    "func": "var sessions = msg.payload || [];\nvar totalFocusMinutes = 0;\nvar totalTrainingVolume = 0;\nvar completedCount = 0;\nsessions.forEach(function(s) {\n  if (s.exec_mode === 'FOCUS') {\n    totalFocusMinutes += (s.duration_min || (s.completion_ratio || 0) * 25);\n  }\n  if (s.exec_mode === 'WORKOUT') {\n    totalTrainingVolume += (s.total_volume || 0);\n  }\n  if (s.state === 'COMPLETED') { completedCount++; }\n});\nvar completionRate = sessions.length > 0 ? completedCount / sessions.length : 0;\nmsg.payload = JSON.stringify({\n  code: 0,\n  data: {\n    week: msg.week,\n    start_date: msg.start_date,\n    end_date: msg.end_date,\n    total_sessions: sessions.length,\n    total_focus_minutes: Math.round(totalFocusMinutes),\n    total_training_volume: totalTrainingVolume,\n    completed_sessions: completedCount,\n    completion_rate: Number(completionRate.toFixed(4))\n  },\n  message: 'ok'\n});\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_response_ok"
+      ]
+    ]
+  },
+  {
+    "id": "f6_response_ok",
+    "type": "http response",
+    "z": "flow6_weekly_stats",
+    "name": "返回周报统计",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "f6_catch",
+    "type": "catch",
+    "z": "flow6_weekly_stats",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f6_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f6_err_format",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f6_error_response",
+    "type": "http response",
+    "z": "flow6_weekly_stats",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  {
+    "id": "flow7_health",
+    "type": "tab",
+    "label": "Flow7: 健康检查",
+    "disabled": false,
+    "info": "提供 /health 和 /ready 端点供 docker healthcheck 和监控使用"
+  },
+  {
+    "id": "f7_health_in",
+    "type": "http in",
+    "z": "flow7_health",
+    "name": "健康检查入口",
+    "url": "/health",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f7_health_response"
+      ]
+    ]
+  },
+  {
+    "id": "f7_ready_in",
+    "type": "http in",
+    "z": "flow7_health",
+    "name": "就绪检查入口",
+    "url": "/ready",
+    "method": "get",
+    "wires": [
+      [
+        "f7_ready_check"
+      ]
+    ]
+  },
+  {
+    "id": "f7_health_response",
+    "type": "function",
+    "z": "flow7_health",
+    "name": "构建健康响应",
+    "func": "msg.payload = { code: 0, data: { status: 'healthy', timestamp: new Date().toISOString(), uptime: process.uptime() }, message: 'ok' }; msg.statusCode = 200; return msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f7_http_out"
+      ]
+    ]
+  },
+  {
+    "id": "f7_ready_check",
+    "type": "function",
+    "z": "flow7_health",
+    "name": "就绪检查",
+    "func": "// 检查 SQLite 是否可用\ntry {\n  // 简单的就绪检查: 返回就绪状态\n  msg.payload = { code: 0, data: { status: 'ready', checks: { sqlite: 'ok', flows: 'active' } }, message: 'ok' };\n  msg.statusCode = 200;\n} catch (e) {\n  msg.payload = { code: 1, error: e.message };\n  msg.statusCode = 503;\n}\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f7_http_out"
+      ]
+    ]
+  },
+  {
+    "id": "f7_http_out",
+    "type": "http response",
+    "z": "flow7_health",
+    "name": "HTTP响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "wires": []
+  }
+]

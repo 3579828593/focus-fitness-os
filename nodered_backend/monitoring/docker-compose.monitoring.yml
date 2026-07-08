@@ -1,0 +1,62 @@
+version: '3.8'
+
+# ============================================
+# 监控服务栈
+# - Prometheus: 指标抓取与存储 (9090)
+# - Grafana: 可视化面板 (3000)
+# - Loki: 日志聚合 (3100)
+# 与 docker-compose.prod.yml 共用 focus_fitness_net 网络
+# 启动: docker compose -f docker-compose.monitoring.yml up -d
+# ============================================
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: focus_fitness_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+    networks:
+      - focus_fitness_net
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: focus_fitness_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-dashboard.json:/etc/grafana/provisioning/dashboards/focus-fitness.json
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - focus_fitness_net
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: focus_fitness_loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - focus_fitness_net
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  focus_fitness_net:
+    external: true
+    name: focus_fitness_net

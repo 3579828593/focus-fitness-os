@@ -1,0 +1,44 @@
+# Flutter
+flutter_app/.dart_tool/
+flutter_app/.packages
+flutter_app/build/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/coverage/
+flutter_app/.fvm/
+flutter_app/**/*.g.dart
+flutter_app/ios/Pods/
+flutter_app/android/.gradle/
+flutter_app/android/app/build/
+flutter_app/android/local.properties
+
+# Drift generated files
+flutter_app/lib/data/database.g.dart
+
+# Node-RED
+nodered_backend/node_modules/
+nodered_backend/data/
+nodered_backend/.config.json
+nodered_backend/.sessions.json
+
+# Environment
+nodered_backend/.env
+nodered_backend/nginx/certs/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+nodered_backend/data/
+
+# Logs
+*.log
+npm-debug.log*

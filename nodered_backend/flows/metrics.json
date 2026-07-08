@@ -1,0 +1,207 @@
+[
+  {
+    "id": "f8_metrics",
+    "type": "tab",
+    "label": "Flow8: 指标采集",
+    "disabled": false,
+    "info": "Prometheus 指标采集与暴露\n- GET /metrics: Prometheus 文本格式\n- POST /metrics/record/session: 记录会话\n- POST /metrics/record/proposal: 记录提案\n- POST /metrics/record/api_request: 记录 API 请求\n- POST /metrics/record/sync_queue: 记录同步队列大小\n所有指标存储在 global context: ff_metrics"
+  },
+  {
+    "id": "f8_metrics_comment",
+    "type": "comment",
+    "z": "f8_metrics",
+    "name": "Prometheus 指标采集 (Flow8)",
+    "info": "暴露 focus_fitness_* 系列指标供 Prometheus 抓取。\n计数器/直方图维护在内存 (global.ff_metrics), 进程重启后归零。",
+    "wires": []
+  },
+  {
+    "id": "f8_metrics_http_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "暴露 /metrics",
+    "url": "/metrics",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_render"
+    ]
+  },
+  {
+    "id": "f8_metrics_render",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "渲染 Prometheus 格式",
+    "func": "// 渲染 Prometheus 文本格式指标\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar DURATION_BUCKETS = [60, 300, 600, 900, 1800, 3600, 5400, 7200];\nvar API_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];\nvar lines = [];\n\n// 1. 会话总数计数器\nlines.push('# HELP focus_fitness_sessions_total 会话总数计数器');\nlines.push('# TYPE focus_fitness_sessions_total counter');\nfor (var key in m.sessions_total) {\n    var parts = key.split('|');\n    lines.push('focus_fitness_sessions_total{type=\"' + parts[0] + '\",status=\"' + parts[1] + '\"} ' + m.sessions_total[key]);\n}\n\n// 2. 会话时长直方图\nlines.push('');\nlines.push('# HELP focus_fitness_session_duration_seconds 会话时长直方图 (秒)');\nlines.push('# TYPE focus_fitness_session_duration_seconds histogram');\nfor (var type in m.session_duration) {\n    var h = m.session_duration[type];\n    for (var i = 0; i < DURATION_BUCKETS.length; i++) {\n        var le = DURATION_BUCKETS[i];\n        lines.push('focus_fitness_session_duration_seconds_bucket{type=\"' + type + '\",le=\"' + le + '\"} ' + (h.buckets[le] || 0));\n    }\n    lines.push('focus_fitness_session_duration_seconds_bucket{type=\"' + type + '\",le=\"+Inf\"} ' + h.count);\n    lines.push('focus_fitness_session_duration_seconds_count{type=\"' + type + '\"} ' + h.count);\n    lines.push('focus_fitness_session_duration_seconds_sum{type=\"' + type + '\"} ' + h.sum);\n}\n\n// 3. 提案总数\nlines.push('');\nlines.push('# HELP focus_fitness_proposals_total 提案总数计数器');\nlines.push('# TYPE focus_fitness_proposals_total counter');\nfor (var key in m.proposals_total) {\n    lines.push('focus_fitness_proposals_total{status=\"' + key + '\"} ' + m.proposals_total[key]);\n}\n\n// 4. API 请求总数\nlines.push('');\nlines.push('# HELP focus_fitness_api_requests_total API 请求总数计数器');\nlines.push('# TYPE focus_fitness_api_requests_total counter');\nfor (var key in m.api_requests_total) {\n    var parts = key.split('|');\n    lines.push('focus_fitness_api_requests_total{endpoint=\"' + parts[0] + '\",status=\"' + parts[1] + '\"} ' + m.api_requests_total[key]);\n}\n\n// 5. API 请求延迟直方图\nlines.push('');\nlines.push('# HELP focus_fitness_api_request_duration_seconds API 请求延迟直方图 (秒)');\nlines.push('# TYPE focus_fitness_api_request_duration_seconds histogram');\nfor (var endpoint in m.api_request_duration) {\n    var h = m.api_request_duration[endpoint];\n    for (var i = 0; i < API_DURATION_BUCKETS.length; i++) {\n        var le = API_DURATION_BUCKETS[i];\n        lines.push('focus_fitness_api_request_duration_seconds_bucket{endpoint=\"' + endpoint + '\",le=\"' + le + '\"} ' + (h.buckets[le] || 0));\n    }\n    lines.push('focus_fitness_api_request_duration_seconds_bucket{endpoint=\"' + endpoint + '\",le=\"+Inf\"} ' + h.count);\n    lines.push('focus_fitness_api_request_duration_seconds_count{endpoint=\"' + endpoint + '\"} ' + h.count);\n    lines.push('focus_fitness_api_request_duration_seconds_sum{endpoint=\"' + endpoint + '\"} ' + h.sum);\n}\n\n// 6. 同步队列大小 (gauge)\nlines.push('');\nlines.push('# HELP focus_fitness_sync_queue_size 同步队列大小');\nlines.push('# TYPE focus_fitness_sync_queue_size gauge');\nlines.push('focus_fitness_sync_queue_size ' + m.sync_queue_size);\n\nmsg.payload = lines.join('\\n') + '\\n';\nmsg.headers = {'Content-Type': 'text/plain; version=0.0.4; charset=utf-8'};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_http_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_http_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回指标",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_session_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录会话",
+    "url": "/metrics/record/session",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_session_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_session_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新会话指标",
+    "func": "// 更新会话计数器和时长直方图\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar type = p.type || 'focus';\nvar status = p.status || 'completed';\nvar duration = parseFloat(p.duration_seconds) || 0;\n\n// 校验 type / status\nvar validTypes = ['focus', 'workout'];\nvar validStatus = ['completed', 'abandoned', 'partial'];\nif (validTypes.indexOf(type) < 0 || validStatus.indexOf(status) < 0) {\n    msg.payload = { ok: false, error: 'invalid type or status' };\n    msg.statusCode = 400;\n    return msg;\n}\n\n// 更新计数器\nvar skey = type + '|' + status;\nm.sessions_total[skey] = (m.sessions_total[skey] || 0) + 1;\n\n// 更新会话时长直方图\nvar DURATION_BUCKETS = [60, 300, 600, 900, 1800, 3600, 5400, 7200];\nif (!m.session_duration[type]) {\n    m.session_duration[type] = { buckets: {}, count: 0, sum: 0 };\n}\nvar h = m.session_duration[type];\nh.count += 1;\nh.sum += duration;\nfor (var i = 0; i < DURATION_BUCKETS.length; i++) {\n    if (duration <= DURATION_BUCKETS[i]) {\n        h.buckets[DURATION_BUCKETS[i]] = (h.buckets[DURATION_BUCKETS[i]] || 0) + 1;\n    }\n}\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_session_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_session_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录提案",
+    "url": "/metrics/record/proposal",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_proposal_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新提案指标",
+    "func": "// 更新提案计数器\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar status = p.status || 'accepted';\n\n// 提案状态仅接受 accepted / rejected\nif (status !== 'accepted' && status !== 'rejected') {\n    msg.payload = { ok: false, error: 'invalid status: ' + status };\n    msg.statusCode = 400;\n    return msg;\n}\n\nm.proposals_total[status] = (m.proposals_total[status] || 0) + 1;\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_proposal_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_api_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录 API 请求",
+    "url": "/metrics/record/api_request",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_api_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_api_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新 API 请求指标",
+    "func": "// 更新 API 请求计数器和延迟直方图\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar endpoint = p.endpoint || 'unknown';\nvar status = String(p.status || '200');\nvar duration = parseFloat(p.duration_seconds) || 0;\n\n// 更新 API 请求计数器\nvar akey = endpoint + '|' + status;\nm.api_requests_total[akey] = (m.api_requests_total[akey] || 0) + 1;\n\n// 更新 API 延迟直方图\nvar API_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];\nif (!m.api_request_duration[endpoint]) {\n    m.api_request_duration[endpoint] = { buckets: {}, count: 0, sum: 0 };\n}\nvar h = m.api_request_duration[endpoint];\nh.count += 1;\nh.sum += duration;\nfor (var i = 0; i < API_DURATION_BUCKETS.length; i++) {\n    if (duration <= API_DURATION_BUCKETS[i]) {\n        h.buckets[API_DURATION_BUCKETS[i]] = (h.buckets[API_DURATION_BUCKETS[i]] || 0) + 1;\n    }\n}\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_api_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_api_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录同步队列",
+    "url": "/metrics/record/sync_queue",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      "f8_metrics_sync_update"
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新同步队列大小",
+    "func": "// 更新同步队列大小 (gauge)\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar size = parseInt(p.size, 10);\nif (isNaN(size) || size < 0) {\n    msg.payload = { ok: false, error: 'invalid size' };\n    msg.statusCode = 400;\n    return msg;\n}\n\nm.sync_queue_size = size;\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true, size: size };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      "f8_metrics_sync_resp"
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {},
+    "wires": [
+      []
+    ]
+  }
+]

@@ -1,0 +1,122 @@
+name: Focus Fitness OS CI
+
+# ============================================
+# 持续集成管道
+# 触发: push 到 main/develop, 或 PR
+# 阶段: lint → test → build
+# ============================================
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ============================================
+  # Flutter 端: 分析 + 测试
+  # ============================================
+  flutter-test:
+    name: Flutter Analyze & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run build_runner (Drift codegen)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze code
+        run: flutter analyze --fatal-warnings
+
+      - name: Run tests
+        run: flutter test --coverage
+
+      - name: Check coverage threshold (>= 60%)
+        run: |
+          node -e "
+            const fs = require('fs');
+            const content = fs.readFileSync('coverage/lcov.info', 'utf8');
+            const lines = content.split('\n');
+            let totalFound = 0, totalHit = 0;
+            for (const line of lines) {
+              if (line.startsWith('LF:')) totalFound += parseInt(line.slice(3));
+              if (line.startsWith('LH:')) totalHit += parseInt(line.slice(3));
+            }
+            const pct = totalFound > 0 ? (totalHit / totalFound * 100).toFixed(1) : 0;
+            console.log('Coverage: ' + pct + '% (' + totalHit + '/' + totalFound + ' lines)');
+            if (parseFloat(pct) < 60) { console.error('Coverage below 60% threshold'); process.exit(1); }
+          "
+
+      - name: Upload coverage
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: flutter_app/coverage/lcov.info
+
+  # ============================================
+  # Node-RED 后端: Flow JSON 校验
+  # ============================================
+  nodered-validate:
+    name: Node-RED Flow Validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodered_backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Validate flows.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('flows/flows.json', 'utf8'));
+            if (!Array.isArray(data)) { process.exit(1); }
+            console.log('Flow validation passed: ' + data.length + ' nodes');
+          "
+
+      - name: Validate function files
+        run: |
+          for f in functions/*.js; do
+            node -e "require('./$f')" 2>/dev/null || echo "Warning: $f exports no module"
+          done
+
+  # ============================================
+  # Docker 镜像构建 (仅 main 分支)
+  # ============================================
+  docker-build:
+    name: Docker Image Build
+    needs: [flutter-test, nodered-validate]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nodered_backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t focus-fitness-nodered:latest .
+
+      - name: Verify image
+        run: docker run --rm focus-fitness-nodered:latest node -e "console.log('Image OK')"

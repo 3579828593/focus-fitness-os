@@ -1,0 +1,90 @@
+[
+  {
+    "id": "flow4_conflict_detection",
+    "type": "tab",
+    "label": "Flow4: 冲突检测重排",
+    "disabled": false,
+    "info": "webhook接收日程变更 → 检测同时段冲突 → 按优先级排序 → 低优先级顺延 → 生成LOCKED提案"
+  },
+  {
+    "id": "f4_webhook",
+    "type": "http in",
+    "z": "flow4_conflict_detection",
+    "name": "接收日程变更",
+    "url": "/api/v1/schedule/change",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [["f4_extract_entry"]]
+  },
+  {
+    "id": "f4_extract_entry",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "提取日程信息",
+    "func": "var payload = msg.payload || {};\nmsg.new_entry = {\n  entry_id: payload.entry_id,\n  date: payload.date,\n  start_time: payload.start_time,\n  unit_id: payload.unit_id\n};\nreturn msg;",
+    "wires": [["f4_query_existing"]]
+  },
+  {
+    "id": "f4_query_existing",
+    "type": "sqlite",
+    "z": "flow4_conflict_detection",
+    "name": "查询同日日程",
+    "mode": "prepared",
+    "sql": "SELECT se.entry_id, se.date, se.start_time, se.exec_mode, se.unit_id, eu.priority FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = ? AND se.entry_id != ?",
+    "wires": [["f4_conflict_detect"]]
+  },
+  {
+    "id": "f4_conflict_detect",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "冲突检测与顺延",
+    "func": "var newEntry = msg.new_entry;\nvar existing = msg.payload || [];\n\n// 检测同时段冲突\nvar conflicts = existing.filter(function(e) {\n  return e.start_time === newEntry.start_time;\n});\n\nvar proposals = [];\n\nif (conflicts.length > 0) {\n  // 获取新条目的优先级\n  var newPriority = 5; // 默认\n  // 按优先级排序 (数字越小优先级越高)\n  var allEntries = conflicts.map(function(e) {\n    return { entry_id: e.entry_id, start_time: e.start_time, priority: e.priority || 5, unit_id: e.unit_id };\n  });\n  allEntries.push({ entry_id: newEntry.entry_id, start_time: newEntry.start_time, priority: newPriority, unit_id: newEntry.unit_id });\n  allEntries.sort(function(a, b) { return a.priority - b.priority; });\n\n  // 低优先级项顺延到下一个空档 (每次+60分钟)\n  for (var i = 1; i < allEntries.length; i++) {\n    var entry = allEntries[i];\n    var newTime = addMinutes(entry.start_time, 60 * i);\n    proposals.push({\n      type: 'PROPOSAL',\n      lock_state: 'LOCKED',\n      target_table: 'schedule_entry',\n      target_id: entry.entry_id,\n      target_field: 'start_time',\n      old_value: entry.start_time,\n      new_value: newTime,\n      reason: '时段冲突，自动顺延到 ' + newTime,\n      created_at: new Date().toISOString()\n    });\n  }\n}\n\nmsg.payload = {\n  conflicts: conflicts,\n  proposals: proposals,\n  resolved: proposals.length > 0\n};\nreturn msg;\n\nfunction addMinutes(timeStr, minutes) {\n  var parts = timeStr.split(':');\n  var h = parseInt(parts[0]);\n  var m = parseInt(parts[1]) + minutes;\n  h += Math.floor(m / 60);\n  m = m % 60;\n  if (h >= 24) h -= 24;\n  return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);\n}",
+    "wires": [["f4_switch_has_conflict"]]
+  },
+  {
+    "id": "f4_switch_has_conflict",
+    "type": "switch",
+    "z": "flow4_conflict_detection",
+    "name": "是否有冲突",
+    "property": "payload.conflicts.length",
+    "rules": [
+      { "t": "gt", "v": 0, "vt": "num" },
+      { "t": "else" }
+    ],
+    "wires": [["f4_save_proposals"], ["f4_response_no_conflict"]]
+  },
+  {
+    "id": "f4_save_proposals",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备提案批量写入",
+    "func": "var proposals = msg.payload.proposals || [];\n// 为每个提案创建一条SQL\nvar statements = proposals.map(function(p) {\n  return {\n    sql: \"INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\",\n    params: [p.type, p.lock_state, p.target_table, p.target_id, p.target_field, p.old_value, p.new_value, p.reason, p.created_at]\n  };\n});\nmsg.payload = statements;\nreturn msg;",
+    "wires": [["f4_batch_sqlite"]]
+  },
+  {
+    "id": "f4_batch_sqlite",
+    "type": "sqlite",
+    "z": "flow4_conflict_detection",
+    "name": "批量写入提案",
+    "mode": "batch",
+    "wires": [["f4_response_with_proposals"]]
+  },
+  {
+    "id": "f4_response_no_conflict",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "无冲突响应",
+    "statusCode": "200",
+    "headers": { "Content-Type": "application/json" },
+    "payload": "{\"code\": 0, \"data\": {\"conflicts\": [], \"proposals\": []}, \"message\": \"no conflict\"}"
+  },
+  {
+    "id": "f4_response_with_proposals",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "返回冲突提案",
+    "statusCode": "200",
+    "headers": { "Content-Type": "application/json" },
+    "payload": "{\"code\": 0, \"data\": {\"conflicts\": true, \"proposals\": \"generated\"}, \"message\": \"conflicts detected, proposals created\"}"
+  }
+]

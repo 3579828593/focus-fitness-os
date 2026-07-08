@@ -1,0 +1,23 @@
+# ============================================
+# Prometheus 抓取配置
+# - 抓取 Node-RED /metrics 端点
+# - 抓取 wger /api/v2/metrics 端点
+# ============================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Node-RED 指标 (Focus Fitness 自定义指标)
+  - job_name: 'nodered'
+    static_configs:
+      - targets: ['nodered:1880']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # wger 训练数据后端指标
+  - job_name: 'wger'
+    static_configs:
+      - targets: ['wger:8000']
+    metrics_path: '/api/v2/metrics'

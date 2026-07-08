@@ -1,0 +1,36 @@
+{
+  "name": "focus-fitness-os-nodered",
+  "version": "1.0.0",
+  "description": "Focus Fitness OS - Node-RED 后端编排服务，负责番茄钟、健身训练、日程调度与通知推送",
+  "private": true,
+  "scripts": {
+    "start": "node-red -u . -s settings.js",
+    "debug": "node-red -u . -s settings.js --verbose",
+    "test": "mocha test/**/*.test.js --timeout 5000"
+  },
+  "dependencies": {
+    "node-red-contrib-cron-plus": "^2.1.0",
+    "node-red-contrib-telegrambot": "^1.9.0",
+    "node-red-contrib-wger": "^0.2.0",
+    "node-red-node-sqlite": "^1.1.0",
+    "node-red-node-email": "^3.0.0",
+    "node-red-node-pushover": "^0.5.0",
+    "@marek-knappe/node-red-google-calendar": "^1.0.0"
+  },
+  "devDependencies": {
+    "node-red-node-test-helper": "^0.3.0",
+    "mocha": "^10.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "node-red",
+    "focus",
+    "fitness",
+    "pomodoro",
+    "wger",
+    "automation"
+  ],
+  "license": "MIT"
+}
