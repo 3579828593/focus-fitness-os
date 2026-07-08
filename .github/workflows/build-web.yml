@@ -1,0 +1,82 @@
+name: Build Web App
+
+# ============================================
+# Flutter Web Build Pipeline
+# Trigger: Push to master (flutter_app changes)
+# Output: GitHub Pages deployment
+# ============================================
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/build-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  build-web:
+    name: Build Flutter Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get Flutter version
+        run: flutter --version
+
+      - name: Generate Android platform files (needed for shared code)
+        run: flutter create --platforms=android,web --project-name=focus_fitness_os .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run build_runner (Drift codegen)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Web App
+        run: |
+          flutter build web --release \
+            --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }} \
+            --web-renderer canvaskit
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://focus-fitness-os-backend-production.up.railway.app' }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: flutter_app/build/web
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: build-web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

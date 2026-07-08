@@ -1,0 +1,23 @@
+{
+    "name": "专注健身OS",
+    "short_name": "FocusFitness",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#6F8F72",
+    "theme_color": "#6F8F72",
+    "description": "备考×健身×规则编排的专注健身操作系统",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
