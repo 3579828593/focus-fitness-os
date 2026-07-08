@@ -25,7 +25,7 @@
     "type": "function",
     "z": "flow2_auto_increment",
     "name": "解析请求体",
-    "func": "// ===== Input Validation + Payload Parsing =====\nvar payload = msg.payload || {};\n\nif (!payload.session_id || typeof payload.session_id !== 'number') {\n  msg.payload = JSON.stringify({ code: 1, error: 'session_id is required and must be a number' });\n  msg.statusCode = 400;\n  return [null, msg];\n}\nif (!payload.entry_id || typeof payload.entry_id !== 'number') {\n  msg.payload = JSON.stringify({ code: 1, error: 'entry_id is required and must be a number' });\n  msg.statusCode = 400;\n  return [null, msg];\n}\n\nmsg.session_id = payload.session_id;\nmsg.entry_id = payload.entry_id;\nmsg.completion_ratio = Math.min(Math.max(parseFloat(payload.completion_ratio) || 0, 0), 1);\nmsg.segments = Array.isArray(payload.segments) ? payload.segments : [];\n\nvar exerciseSet = msg.segments.filter(function(s) { return s.seg_type === 'WORKOUT_SET'; });\nif (exerciseSet.length > 0) {\n  msg.exercise = {\n    exercise_id: exerciseSet[0].exercise_id,\n    planned_sets: exerciseSet.length,\n    planned_reps: exerciseSet[0].planned_reps,\n    planned_weight: exerciseSet[0].weight_kg_done,\n    max_weight: Math.max.apply(null, exerciseSet.map(function(s) { return s.weight_kg_done || 0; }))\n  };\n}\nreturn [msg, null];",
+    "func": "// ===== Input Validation + Payload Parsing =====\nvar payload = msg.payload || {};\n\nif (!payload.session_id || typeof payload.session_id !== 'number') {\n  msg.payload = JSON.stringify({ code: 1, error: 'session_id is required and must be a number' });\n  msg.statusCode = 400;\n  return [null, msg];\n}\nif (!payload.entry_id || typeof payload.entry_id !== 'number') {\n  msg.payload = JSON.stringify({ code: 1, error: 'entry_id is required and must be a number' });\n  msg.statusCode = 400;\n  return [null, msg];\n}\n\nmsg.session_id = payload.session_id;\nmsg.entry_id = payload.entry_id;\nmsg.completion_ratio = Math.min(Math.max(parseFloat(payload.completion_ratio) || 0, 0), 1);\nmsg.segments = Array.isArray(payload.segments) ? payload.segments : [];\n\nvar exerciseSet = msg.segments.filter(function(s) { return s.seg_type === 'WORKOUT_SET'; });\nif (exerciseSet.length > 0) {\n  msg.exercise = {\n    exercise_id: exerciseSet[0].exercise_id,\n    planned_sets: exerciseSet.length,\n    planned_reps: exerciseSet[0].planned_reps,\n    planned_weight: exerciseSet[0].weight_kg_done,\n    max_weight: Math.max.apply(null, exerciseSet.map(function(s) { return s.weight_kg_done || 0; }))\n  };\n}\nmsg.original_entry_id = payload.entry_id;\nreturn [msg, null];",
     "wires": [
       [
         "f2_switch_has_exercise"
@@ -77,26 +77,25 @@
     "type": "sqlite",
     "z": "flow2_auto_increment",
     "name": "保存提案到DB",
-    "mode": "prepared",
     "sql": "",
     "wires": [
       [
-        "f2_response_ok"
+        "f2_prep_streak"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
   },
   {
     "id": "f2_update_streak",
     "type": "sqlite",
     "z": "flow2_auto_increment",
     "name": "更新连续记录",
-    "mode": "prepared",
-    "sql": "UPDATE streaks SET current_count = current_count + 1, longest_count = CASE WHEN current_count + 1 > longest_count THEN current_count + 1 ELSE longest_count END, last_date = date('now') WHERE unit_id = (SELECT unit_id FROM schedule_entries WHERE entry_id = ?)",
     "wires": [
       []
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
   },
   {
     "id": "f2_response_ok",
@@ -155,7 +154,7 @@
     "func": "var payload = msg.payload || {};\nmsg.new_entry = {\n  entry_id: payload.entry_id,\n  date: payload.date,\n  start_time: payload.start_time,\n  unit_id: payload.unit_id\n};\nreturn msg;",
     "wires": [
       [
-        "f4_query_existing"
+        "f4_prep_query"
       ]
     ]
   },
@@ -164,14 +163,13 @@
     "type": "sqlite",
     "z": "flow4_conflict_detection",
     "name": "查询同日日程",
-    "mode": "prepared",
-    "sql": "SELECT se.entry_id, se.date, se.start_time, se.exec_mode, se.unit_id, eu.priority FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = ? AND se.entry_id != ?",
     "wires": [
       [
         "f4_conflict_detect"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
   },
   {
     "id": "f4_conflict_detect",
@@ -218,7 +216,7 @@
     "func": "var proposals = msg.payload.proposals || [];\n// 为每个提案创建一条SQL\nvar statements = proposals.map(function(p) {\n  return {\n    sql: \"INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\",\n    params: [p.type, p.lock_state, p.target_table, p.target_id, p.target_field, p.old_value, p.new_value, p.reason, p.created_at]\n  };\n});\nmsg.payload = statements;\nreturn msg;",
     "wires": [
       [
-        "f4_batch_sqlite"
+        "f4_prep_batch"
       ]
     ]
   },
@@ -227,13 +225,13 @@
     "type": "sqlite",
     "z": "flow4_conflict_detection",
     "name": "批量写入提案",
-    "mode": "batch",
     "wires": [
       [
         "f4_response_with_proposals"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "batch"
   },
   {
     "id": "f4_response_no_conflict",
@@ -385,7 +383,7 @@
     "outputs": 1,
     "wires": [
       [
-        "f5_update_proposal"
+        "f5_prep_update"
       ]
     ]
   },
@@ -394,14 +392,13 @@
     "type": "sqlite",
     "z": "flow5_proposal_manage",
     "name": "更新提案状态",
-    "mode": "prepared",
-    "sql": "UPDATE proposals SET lock_state = ? WHERE rowid = ?",
     "wires": [
       [
         "f5_format_response"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
   },
   {
     "id": "f5_format_response",
@@ -494,11 +491,11 @@
     "type": "function",
     "z": "flow6_weekly_stats",
     "name": "解析周参数",
-    "func": "var week = (msg.req.query && msg.req.query.week) || '';\nvar startDate, endDate;\nfunction fmt(d) {\n  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);\n}\nvar m = week.match(/^(\\d{4})-W(\\d{2})$/);\nif (m) {\n  var year = parseInt(m[1]);\n  var weekNum = parseInt(m[2]);\n  var simple = new Date(year, 0, 1 + (weekNum - 1) * 7);\n  var dow = simple.getDay();\n  var monday = new Date(simple);\n  if (dow <= 4) { monday.setDate(simple.getDate() - simple.getDay() + 1); }\n  else { monday.setDate(simple.getDate() + 8 - simple.getDay()); }\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n} else if (week) {\n  startDate = week + 'T00:00:00';\n  var e = new Date(week);\n  e.setDate(e.getDate() + 6);\n  endDate = fmt(e) + 'T23:59:59';\n} else {\n  var now = new Date();\n  var d = now.getDay();\n  var monday = new Date(now);\n  monday.setDate(now.getDate() - d + 1);\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n}\nmsg.start_date = startDate;\nmsg.end_date = endDate;\nmsg.week = week;\nreturn msg;",
+    "func": "var week = (msg.req.query && msg.req.query.week) || '';\nvar startDate, endDate;\nfunction fmt(d) {\n  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);\n}\nvar m = week.match(/^(\\d{4})-W(\\d{2})$/);\nif (m) {\n  var year = parseInt(m[1]);\n  var weekNum = parseInt(m[2]);\n  var simple = new Date(year, 0, 1 + (weekNum - 1) * 7);\n  var dow = simple.getDay();\n  var monday = new Date(simple);\n  if (dow <= 4) { monday.setDate(simple.getDate() - simple.getDay() + 1); }\n  else { monday.setDate(simple.getDate() + 8 - simple.getDay()); }\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n} else if (week) {\n  startDate = week + 'T00:00:00';\n  var e = new Date(week);\n  e.setDate(e.getDate() + 6);\n  endDate = fmt(e) + 'T23:59:59';\n} else {\n  var now = new Date();\n  var d = now.getDay();\n  var monday = new Date(now);\n  monday.setDate(now.getDate() - d + 1);\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n}\nmsg.week_start = startDate;\nmsg.week_end = endDate;\nmsg.week = week;\nreturn msg;",
     "outputs": 1,
     "wires": [
       [
-        "f6_query_sessions"
+        "f6_prep_query"
       ]
     ]
   },
@@ -507,14 +504,13 @@
     "type": "sqlite",
     "z": "flow6_weekly_stats",
     "name": "查询周会话",
-    "mode": "prepared",
-    "sql": "SELECT * FROM sessions WHERE started_at >= ? AND started_at <= ?",
     "wires": [
       [
         "f6_aggregate"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
   },
   {
     "id": "f6_aggregate",
@@ -1111,7 +1107,7 @@
     "type": "function",
     "z": "flow10_schema_init",
     "name": "构建建表SQL",
-    "func": "// ===== SQLite Schema Auto-Initialization =====\nvar batch = [{\"sql\":\"CREATE TABLE IF NOT EXISTS executable_units (id INTEGER PRIMARY KEY AUTOINCREMENT, unit_type TEXT NOT NULL, title TEXT NOT NULL, priority INTEGER DEFAULT 3, expected_minutes INTEGER NOT NULL, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS learning_task_exts (unit_id INTEGER PRIMARY KEY REFERENCES executable_units(id) ON DELETE CASCADE, task_kind TEXT NOT NULL, focus_minutes INTEGER DEFAULT 25, break_minutes INTEGER DEFAULT 5, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS workout_plan_exts (unit_id INTEGER PRIMARY KEY REFERENCES executable_units(id) ON DELETE CASCADE, workout_kind TEXT NOT NULL, target_muscle TEXT, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS workout_exercises (exercise_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, name TEXT NOT NULL, planned_sets INTEGER NOT NULL, planned_reps INTEGER NOT NULL, planned_weight REAL NOT NULL, rest_seconds INTEGER DEFAULT 90, rpe REAL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS schedule_entries (entry_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, date TEXT NOT NULL, start_time TEXT NOT NULL, exec_mode TEXT NOT NULL, is_baseline INTEGER DEFAULT 0, lock_state TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER REFERENCES schedule_entries(entry_id) ON DELETE CASCADE, state TEXT DEFAULT 'CREATED', started_at TEXT, ended_at TEXT, completion_ratio REAL DEFAULT 0.0, outcome TEXT, last_segment_index INTEGER DEFAULT 0, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS session_segments (segment_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER REFERENCES sessions(session_id) ON DELETE CASCADE, seg_type TEXT NOT NULL, planned_seconds INTEGER NOT NULL, actual_seconds INTEGER, reps_done INTEGER, weight_kg_done REAL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS goals (goal_id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, target_value REAL NOT NULL, current_value REAL DEFAULT 0.0, unit TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS streaks (streak_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, current_count INTEGER DEFAULT 0, longest_count INTEGER DEFAULT 0, last_date TEXT, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS op_logs (op_id INTEGER PRIMARY KEY AUTOINCREMENT, tbl_name TEXT NOT NULL, record_id INTEGER NOT NULL, op_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT DEFAULT '2026-01-01T00:00:00', synced INTEGER DEFAULT 0, device_id TEXT, lamport_clock INTEGER DEFAULT 0)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, lock_state TEXT DEFAULT 'PENDING', target_table TEXT NOT NULL, target_id INTEGER, target_field TEXT, old_value TEXT, new_value TEXT, reason TEXT, created_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_schedule_date_time ON schedule_entries(date, start_time)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_session_entry_state ON sessions(entry_id, state)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_segment_session ON session_segments(session_id, segment_id)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_oplog_synced ON op_logs(synced, created_at)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_exercise_unit ON workout_exercises(unit_id)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_streak_unit_date ON streaks(unit_id, last_date)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_schedule_active ON schedule_entries(date, deleted_at)\",\"params\":[]},{\"sql\":\"CREATE INDEX IF NOT EXISTS idx_session_active ON sessions(entry_id, deleted_at)\",\"params\":[]}];\nmsg.payload = batch;\nreturn msg;",
+    "func": "// ===== SQLite Schema Auto-Initialization (batch mode via msg.topic) =====\n// Set msg.topic to all CREATE TABLE/INDEX statements for batch execution\nmsg.topic = \"CREATE TABLE IF NOT EXISTS executable_units (id INTEGER PRIMARY KEY AUTOINCREMENT, unit_type TEXT NOT NULL, title TEXT NOT NULL, priority INTEGER DEFAULT 3, expected_minutes INTEGER NOT NULL, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS learning_task_exts (unit_id INTEGER PRIMARY KEY REFERENCES executable_units(id) ON DELETE CASCADE, task_kind TEXT NOT NULL, focus_minutes INTEGER DEFAULT 25, break_minutes INTEGER DEFAULT 5, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS workout_plan_exts (unit_id INTEGER PRIMARY KEY REFERENCES executable_units(id) ON DELETE CASCADE, workout_kind TEXT NOT NULL, target_muscle TEXT, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS workout_exercises (exercise_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, name TEXT NOT NULL, planned_sets INTEGER NOT NULL, planned_reps INTEGER NOT NULL, planned_weight REAL NOT NULL, rest_seconds INTEGER DEFAULT 90, rpe REAL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS schedule_entries (entry_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, date TEXT NOT NULL, start_time TEXT NOT NULL, exec_mode TEXT NOT NULL, is_baseline INTEGER DEFAULT 0, lock_state TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER REFERENCES schedule_entries(entry_id) ON DELETE CASCADE, state TEXT DEFAULT 'CREATED', started_at TEXT, ended_at TEXT, completion_ratio REAL DEFAULT 0.0, outcome TEXT, last_segment_index INTEGER DEFAULT 0, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS session_segments (segment_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER REFERENCES sessions(session_id) ON DELETE CASCADE, seg_type TEXT NOT NULL, planned_seconds INTEGER NOT NULL, actual_seconds INTEGER, reps_done INTEGER, weight_kg_done REAL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS goals (goal_id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, target_value REAL NOT NULL, current_value REAL DEFAULT 0.0, unit TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS streaks (streak_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, current_count INTEGER DEFAULT 0, longest_count INTEGER DEFAULT 0, last_date TEXT, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS op_logs (op_id INTEGER PRIMARY KEY AUTOINCREMENT, tbl_name TEXT NOT NULL, record_id INTEGER NOT NULL, op_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT DEFAULT '2026-01-01T00:00:00', synced INTEGER DEFAULT 0, device_id TEXT, lamport_clock INTEGER DEFAULT 0);\\nCREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, lock_state TEXT DEFAULT 'PENDING', target_table TEXT NOT NULL, target_id INTEGER, target_field TEXT, old_value TEXT, new_value TEXT, reason TEXT, created_at TEXT);\\nCREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT);\\nCREATE INDEX IF NOT EXISTS idx_schedule_date_time ON schedule_entries(date, start_time);\\nCREATE INDEX IF NOT EXISTS idx_session_entry_state ON sessions(entry_id, state);\\nCREATE INDEX IF NOT EXISTS idx_segment_session ON session_segments(session_id, segment_id);\\nCREATE INDEX IF NOT EXISTS idx_oplog_synced ON op_logs(synced, created_at);\\nCREATE INDEX IF NOT EXISTS idx_exercise_unit ON workout_exercises(unit_id);\\nCREATE INDEX IF NOT EXISTS idx_streak_unit_date ON streaks(unit_id, last_date);\\nCREATE INDEX IF NOT EXISTS idx_schedule_active ON schedule_entries(date, deleted_at);\\nCREATE INDEX IF NOT EXISTS idx_session_active ON sessions(entry_id, deleted_at);\";\nmsg.payload = \"schema_init\";\nreturn msg;",
     "outputs": 1,
     "wires": [
       [
@@ -1124,13 +1120,13 @@
     "type": "sqlite",
     "z": "flow10_schema_init",
     "name": "执行建表",
-    "mode": "batch",
     "wires": [
       [
         "f10_log_result"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "batch"
   },
   {
     "id": "f10_log_result",
@@ -1304,7 +1300,7 @@
     "type": "function",
     "z": "flow11_proposals_list",
     "name": "解析查询参数",
-    "func": "var status = (msg.req.query && msg.req.query.status) || '';\nvar limit = parseInt((msg.req.query && msg.req.query.limit) || '50', 10);\nif (isNaN(limit) || limit < 1 || limit > 200) { limit = 50; }\n\nvar sql = 'SELECT rowid as id, type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at FROM proposals';\nvar params = [];\n\nif (status && ['PENDING','LOCKED','ACCEPTED','REJECTED'].indexOf(status) !== -1) {\n  sql += ' WHERE lock_state = ?';\n  params.push(status);\n}\nsql += ' ORDER BY created_at DESC LIMIT ?';\nparams.push(limit);\n\nmsg.topic = sql;\nmsg.payload = params;\nreturn msg;",
+    "func": "// Parse query params for proposals list (msg.topic mode)\nvar status = (msg.req.query && msg.req.query.status) || '';\nvar limit = parseInt((msg.req.query && msg.req.query.limit) || '50', 10);\nif (isNaN(limit) || limit < 1 || limit > 200) { limit = 50; }\n\nvar sql = 'SELECT rowid as id, type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at FROM proposals';\nvar params = [];\n\nif (status && ['PENDING','LOCKED','ACCEPTED','REJECTED'].indexOf(status) !== -1) {\n  sql += ' WHERE lock_state = $1';\n  params.push(status);\n}\nsql += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1);\nparams.push(limit);\n\nmsg.topic = sql;\nmsg.payload = params;\nreturn msg;",
     "outputs": 1,
     "wires": [
       [
@@ -1317,14 +1313,14 @@
     "type": "sqlite",
     "z": "flow11_proposals_list",
     "name": "查询提案列表",
-    "mode": "prepared",
     "sql": "",
     "wires": [
       [
         "f11_format"
       ]
     ],
-    "db": "ffos_sqlite_db"
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
   },
   {
     "id": "f11_format",
@@ -1472,11 +1468,76 @@
     "type": "function",
     "z": "flow2_auto_increment",
     "name": "准备SQL参数",
-    "func": "// Convert proposal object to SQL params array\nvar p = msg.payload.proposal || msg.payload;\nmsg.topic = 'INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';\nmsg.payload = [\n  p.type,\n  p.lock_state,\n  p.target_table,\n  p.target_id,\n  p.target_field,\n  String(p.old_value),\n  String(p.new_value),\n  p.reason,\n  p.created_at\n];\nmsg.proposal_info = msg.payload;\nreturn msg;",
+    "func": "// Convert proposal object to SQL params for msg.topic mode\nvar p = msg.payload.proposal || msg.payload;\nmsg.topic = 'INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)';\nmsg.payload = [\n  p.type,\n  p.lock_state,\n  p.target_table,\n  p.target_id,\n  p.target_field,\n  String(p.old_value),\n  String(p.new_value),\n  p.reason,\n  p.created_at\n];\nmsg.proposal_info = msg.payload;\nreturn msg;",
     "outputs": 1,
     "wires": [
       [
         "f2_save_proposal"
+      ]
+    ]
+  },
+  {
+    "id": "f2_prep_streak",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "准备连续记录SQL",
+    "func": "// Prepare streak update SQL for msg.topic mode\n// entry_id was parsed and stored by f2_parse_payload\nvar entryId = msg.original_entry_id || msg.entry_id;\nmsg.topic = 'UPDATE streaks SET current_count = current_count + 1, longest_count = CASE WHEN current_count + 1 > longest_count THEN current_count + 1 ELSE longest_count END, last_date = date($1) WHERE unit_id = (SELECT unit_id FROM schedule_entries WHERE entry_id = $2)';\nmsg.payload = [new Date().toISOString().slice(0,10), entryId];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f2_update_streak"
+      ]
+    ]
+  },
+  {
+    "id": "f4_prep_query",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备查询SQL",
+    "func": "// Prepare conflict detection query for msg.topic mode\nmsg.topic = 'SELECT se.entry_id, se.date, se.start_time, se.exec_mode, se.unit_id, eu.priority FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = $1 AND se.entry_id != $2';\nmsg.payload = [msg.new_entry.date, msg.new_entry.entry_id];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f4_query_existing"
+      ]
+    ]
+  },
+  {
+    "id": "f4_prep_batch",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备批量SQL",
+    "func": "// Build batch INSERT for new schedule entry using msg.topic (batch mode)\nvar e = msg.new_entry;\nmsg.topic = \"INSERT INTO schedule_entries (unit_id, date, start_time, exec_mode, is_baseline, lock_state) VALUES ('\" + e.unit_id + \"', '\" + e.date + \"', '\" + e.start_time + \"', '\" + (e.exec_mode || 'LEARNING') + \"', 0, 'OPEN');\";\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f4_batch_sqlite"
+      ]
+    ]
+  },
+  {
+    "id": "f5_prep_update",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "准备更新SQL",
+    "func": "// Prepare proposal update SQL for msg.topic mode\nmsg.topic = 'UPDATE proposals SET lock_state = $1 WHERE rowid = $2';\nmsg.payload = [msg.lock_state, msg.proposal_id];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_update_proposal"
+      ]
+    ]
+  },
+  {
+    "id": "f6_prep_query",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "准备查询SQL",
+    "func": "// Prepare weekly sessions query for msg.topic mode\nmsg.topic = 'SELECT * FROM sessions WHERE started_at >= $1 AND started_at <= $2';\nmsg.payload = [msg.week_start, msg.week_end];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_query_sessions"
       ]
     ]
   }
