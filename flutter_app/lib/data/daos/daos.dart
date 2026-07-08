@@ -41,7 +41,7 @@ class ScheduleDao extends DatabaseAccessor<AppDatabase>
 
   /// 更新日程行
   Future<bool> updateScheduleEntry(ScheduleEntry entry) {
-    return (update(scheduleEntries).replace(entry)).then((rows) => rows > 0);
+    return update(scheduleEntries).replace(entry);
   }
 
   /// 删除日程行
@@ -178,10 +178,10 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
       final now = DateTime.now().toIso8601String();
       final unitId = await into(executableUnits).insert(
             ExecutableUnitsCompanion.insert(
-              unitType: const Constant('LEARNING'),
-              title: Constant(title),
+              unitType: 'LEARNING',
+              title: title,
               priority: Value(priority),
-              expectedMinutes: Constant(expectedMinutes),
+              expectedMinutes: expectedMinutes,
               createdAt: Value(now),
             ),
           );
@@ -189,7 +189,7 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
       await into(learningTaskExts).insert(
         LearningTaskExtsCompanion.insert(
           unitId: unitId,
-          taskKind: Constant(taskKind),
+          taskKind: taskKind,
           focusMinutes: Value(focusMinutes),
           breakMinutes: Value(breakMinutes),
         ),
@@ -212,10 +212,10 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
       final now = DateTime.now().toIso8601String();
       final unitId = await into(executableUnits).insert(
             ExecutableUnitsCompanion.insert(
-              unitType: const Constant('WORKOUT'),
-              title: Constant(title),
+              unitType: 'WORKOUT',
+              title: title,
               priority: Value(priority),
-              expectedMinutes: Constant(expectedMinutes),
+              expectedMinutes: expectedMinutes,
               createdAt: Value(now),
             ),
           );
@@ -223,7 +223,7 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
       await into(workoutPlanExts).insert(
         WorkoutPlanExtsCompanion.insert(
           unitId: unitId,
-          workoutKind: Constant(workoutKind),
+          workoutKind: workoutKind,
           targetMuscle: targetMuscle != null ? Value(targetMuscle) : const Value.absent(),
         ),
       );
@@ -244,10 +244,10 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
     return into(workoutExercises).insert(
       WorkoutExercisesCompanion.insert(
         unitId: unitId,
-        name: Constant(name),
-        plannedSets: Constant(plannedSets),
-        plannedReps: Constant(plannedReps),
-        plannedWeight: Constant(plannedWeight),
+        name: name,
+        plannedSets: plannedSets,
+        plannedReps: plannedReps,
+        plannedWeight: plannedWeight,
         restSeconds: Value(restSeconds),
       ),
     );
