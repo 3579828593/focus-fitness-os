@@ -188,7 +188,7 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
 
       await into(learningTaskExts).insert(
         LearningTaskExtsCompanion.insert(
-          unitId: unitId,
+          unitId: Value(unitId),
           taskKind: taskKind,
           focusMinutes: Value(focusMinutes),
           breakMinutes: Value(breakMinutes),
@@ -222,7 +222,7 @@ class UnitDao extends DatabaseAccessor<AppDatabase>
 
       await into(workoutPlanExts).insert(
         WorkoutPlanExtsCompanion.insert(
-          unitId: unitId,
+          unitId: Value(unitId),
           workoutKind: workoutKind,
           targetMuscle: targetMuscle != null ? Value(targetMuscle) : const Value.absent(),
         ),
@@ -326,7 +326,7 @@ class OpLogDao extends DatabaseAccessor<AppDatabase>
     int? lamportClock,
   }) {
     return into(opLogs).insert(OpLogsCompanion.insert(
-      tableName: tableName,
+      tblName: tableName,
       recordId: recordId,
       opType: opType,
       payload: jsonEncode(payload), // 正确的 JSON 编码
@@ -358,7 +358,7 @@ class OpLogDao extends DatabaseAccessor<AppDatabase>
 
   /// 统计未同步记录数
   Future<int> unsyncedCount() async {
-    final count = countOf(opLogs);
+    final count = opLogs.opId.count();
     final result = await (selectOnly(opLogs)
           ..addColumns([count])
           ..where(opLogs.synced.equals(false)))

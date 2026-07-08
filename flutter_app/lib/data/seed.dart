@@ -26,10 +26,10 @@ Future<void> seedDatabase(AppDatabase db) async {
   // 3. 默认学习任务: 专注学习 (番茄钟25分钟)
   final learningUnitId = await db.into(db.executableUnits).insert(
         ExecutableUnitsCompanion.insert(
-          unitType: const Constant('LEARNING'),
-          title: const Constant('专注学习'),
-          priority: const Constant(2),
-          expectedMinutes: const Constant(50),
+          unitType: 'LEARNING',
+          title: '专注学习',
+          priority: Value(2),
+          expectedMinutes: 50,
           createdAt: Value(now),
         ),
       );
@@ -37,19 +37,19 @@ Future<void> seedDatabase(AppDatabase db) async {
   await db.into(db.learningTaskExts).insert(
         LearningTaskExtsCompanion.insert(
           unitId: learningUnitId,
-          taskKind: const Constant('READING'),
-          focusMinutes: const Constant(25),
-          breakMinutes: const Constant(5),
+          taskKind: 'READING',
+          focusMinutes: Value(25),
+          breakMinutes: Value(5),
         ),
       );
 
   // 4. 默认健身计划: 推日训练
   final workoutUnitId = await db.into(db.executableUnits).insert(
         ExecutableUnitsCompanion.insert(
-          unitType: const Constant('WORKOUT'),
-          title: const Constant('推日训练'),
-          priority: const Constant(1),
-          expectedMinutes: const Constant(60),
+          unitType: 'WORKOUT',
+          title: '推日训练',
+          priority: Value(1),
+          expectedMinutes: 60,
           createdAt: Value(now),
         ),
       );
@@ -57,37 +57,37 @@ Future<void> seedDatabase(AppDatabase db) async {
   await db.into(db.workoutPlanExts).insert(
         WorkoutPlanExtsCompanion.insert(
           unitId: workoutUnitId,
-          workoutKind: const Constant('PUSH'),
-          targetMuscle: const Constant('胸/肩/三头'),
+          workoutKind: 'PUSH',
+          targetMuscle: Value('胸/肩/三头'),
         ),
       );
 
   // 5. 推日动作明细: 卧推4×8 / 肩推3×10 / 三头下压3×12
   await db.into(db.workoutExercises).insert(WorkoutExercisesCompanion.insert(
         unitId: workoutUnitId,
-        name: const Constant('杠铃卧推'),
-        plannedSets: const Constant(4),
-        plannedReps: const Constant(8),
-        plannedWeight: const Constant(60.0),
-        restSeconds: const Constant(120),
+        name: '杠铃卧推',
+        plannedSets: 4,
+        plannedReps: 8,
+        plannedWeight: 60.0,
+        restSeconds: Value(120),
       ));
 
   await db.into(db.workoutExercises).insert(WorkoutExercisesCompanion.insert(
         unitId: workoutUnitId,
-        name: const Constant('哑铃肩推'),
-        plannedSets: const Constant(3),
-        plannedReps: const Constant(10),
-        plannedWeight: const Constant(20.0),
-        restSeconds: const Constant(90),
+        name: '哑铃肩推',
+        plannedSets: 3,
+        plannedReps: 10,
+        plannedWeight: 20.0,
+        restSeconds: Value(90),
       ));
 
   await db.into(db.workoutExercises).insert(WorkoutExercisesCompanion.insert(
         unitId: workoutUnitId,
-        name: const Constant('绳索三头下压'),
-        plannedSets: const Constant(3),
-        plannedReps: const Constant(12),
-        plannedWeight: const Constant(25.0),
-        restSeconds: const Constant(60),
+        name: '绳索三头下压',
+        plannedSets: 3,
+        plannedReps: 12,
+        plannedWeight: 25.0,
+        restSeconds: Value(60),
       ));
 
   // 6. 初始化连续记录

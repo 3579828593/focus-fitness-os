@@ -168,7 +168,7 @@ class Streaks extends Table {
 /// 表10: 操作日志 (同步用)
 class OpLogs extends Table {
   IntColumn get opId => integer().autoIncrement()();
-  TextColumn get tableName => text()();
+  TextColumn get tblName => text()(); // 表名 (避免与 Table.tableName 冲突)
   IntColumn get recordId => integer()();
   TextColumn get opType => text()(); // INSERT | UPDATE | DELETE
   TextColumn get payload => text()(); // JSON

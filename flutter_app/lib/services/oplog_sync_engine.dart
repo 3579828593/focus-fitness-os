@@ -85,8 +85,8 @@ class OpLogSyncEngine {
   /// 同步单条操作日志
   Future<bool> _syncSingleLog(OpLog log) async {
     try {
-      // 根据 tableName 和 opType 路由到对应的 API 端点
-      switch (log.tableName) {
+      // 根据 tblName 和 opType 路由到对应的 API 端点
+      switch (log.tblName) {
         case 'sessions':
           return await _syncSessionLog(log);
         case 'schedule_entries':

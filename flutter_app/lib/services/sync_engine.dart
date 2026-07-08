@@ -275,7 +275,7 @@ class SyncEngine {
     final operations = unsyncedLogs.map((log) {
       return {
         'op_id': log.opId,
-        'table': log.tableName,
+        'table': log.tblName,
         'record_id': log.recordId,
         'op_type': log.opType,
         'payload': log.payload,
