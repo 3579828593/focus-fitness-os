@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOLO-OS PRAR Cycle 2 — 执行报告</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d29;
+  --ink: #e4e6eb;
+  --muted: #8b8fa3;
+  --rule: #2a2d3a;
+  --accent: #6f8f72;
+  --accent2: #d4a373;
+  --danger: #e07a5f;
+  --success: #81b29a;
+  --warn: #f2cc8f;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.7;
+  padding: 2rem 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: var(--accent); }
+h2 { font-size: 1.3rem; margin: 2rem 0 0.8rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule); color: var(--ink); }
+h3 { font-size: 1.05rem; margin: 1.2rem 0 0.5rem; color: var(--accent2); }
+p { margin-bottom: 0.8rem; color: var(--muted); }
+strong { color: var(--ink); font-weight: 600; }
+code { font-family: 'Cascadia Code', 'Fira Code', monospace; background: var(--bg2); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85rem; color: var(--accent2); }
+pre { background: var(--bg2); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0.8rem 0; border: 1px solid var(--rule); }
+pre code { background: none; padding: 0; color: var(--ink); }
+table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; }
+th { text-align: left; padding: 0.6rem 0.8rem; background: var(--bg2); color: var(--accent); font-weight: 600; font-size: 0.9rem; border-bottom: 2px solid var(--rule); }
+td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--rule); font-size: 0.9rem; color: var(--muted); }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+.badge-ok { background: rgba(129,178,154,0.15); color: var(--success); }
+.badge-fix { background: rgba(224,122,95,0.15); color: var(--danger); }
+.badge-pending { background: rgba(242,204,143,0.15); color: var(--warn); }
+.header-meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.summary-card { background: var(--bg2); padding: 1.2rem; border-radius: 8px; border: 1px solid var(--rule); }
+.summary-card .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.summary-card .label { font-size: 0.8rem; color: var(--muted); margin-top: 0.3rem; }
+.timeline { position: relative; padding-left: 1.5rem; }
+.timeline::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--rule); }
+.timeline-item { position: relative; padding-bottom: 1rem; }
+.timeline-item::before { content: ''; position: absolute; left: -1.5rem; top: 0.4rem; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+.timeline-time { font-size: 0.8rem; color: var(--muted); }
+.timeline-text { font-size: 0.9rem; color: var(--ink); }
+.footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); text-align: center; color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<h1>SOLO-OS PRAR Cycle 2 — 执行报告</h1>
+<div class="header-meta">
+  Focus Fitness OS Backend &middot; 2026-07-08 &middot; Commit: <code>b65c4d6</code> &middot; Railway: <code>sha-b65c4d6</code>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-card"><div class="num">12</div><div class="label">问题识别</div></div>
+  <div class="summary-card"><div class="num">5</div><div class="label">文件修复</div></div>
+  <div class="summary-card"><div class="num">6/6</div><div class="label">API 验证通过</div></div>
+  <div class="summary-card"><div class="num">2</div><div class="label">Git 提交</div></div>
+</div>
+
+<h2>P — 检索：状态审查</h2>
+<p>Railway 部署仍然在线（<code>/health</code> 返回 200）。通过代码审查发现 <strong>12 个待修复问题</strong>，覆盖 5 个关键文件：</p>
+
+<table>
+<tr><th>优先级</th><th>问题</th><th>文件</th><th>状态</th></tr>
+<tr><td><span class="badge badge-fix">P0</span></td><td>6 个 SQLite 节点缺少 database 路径配置</td><td>flows.json</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P0</span></td><td>CI/CD 缺少 <code>platforms: linux/amd64,linux/arm64</code></td><td>docker-publish.yml</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P0</span></td><td>Refresh Token 仅内存存储，重启即失效</td><td>flows.json / auth.json</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P1</span></td><td>硬编码明文凭据 <code>admin/admin123</code></td><td>flows.json / auth.json</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P1</span></td><td>HEALTHCHECK 检查 <code>/</code> 而非 <code>/health</code></td><td>Dockerfile</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P1</span></td><td>JWT_SECRET 读取方式不一致</td><td>auth.json vs flows.json</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P2</span></td><td>硬编码默认 JWT 密钥 fallback</td><td>settings.js</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P2</span></td><td>Dockerfile 硬编码 <code>NODE_RED_SECRET</code></td><td>Dockerfile</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-fix">P2</span></td><td>密码明文比较无时序攻击防护</td><td>flows.json</td><td><span class="badge badge-ok">已修复</span></td></tr>
+<tr><td><span class="badge badge-pending">P2</span></td><td>Railay Healthcheck Path 未配置</td><td>Railway 平台</td><td><span class="badge badge-ok">已修复</span></td></tr>
+</table>
+
+<h2>R — 分析：最优执行路径</h2>
+<p>按依赖关系排列修复顺序：<strong>基础设施先行，应用层随后</strong>。SQLite 配置节点是其他数据持久化功能的前置依赖，因此优先修复。认证加固依赖 SQLite（用于未来用户存储），但当前使用文件持久化作为过渡方案。</p>
+
+<h2>A — 执行：变更详情</h2>
+
+<h3>1. Dockerfile 修复</h3>
+<pre><code>-- 修复前
+HEALTHCHECK CMD wget -q --spider http://localhost:${PORT:-1880}/ || exit 1
+ENV NODE_RED_SECRET=dev-secret-change-in-prod
+
+-- 修复后
+RUN mkdir -p /data/db
+HEALTHCHECK CMD node -e "require('http').get('http://localhost:'+(process.env.PORT||1880)+'/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"</code></pre>
+
+<h3>2. CI/CD 多架构构建</h3>
+<pre><code># 新增 QEMU 步骤
+- name: Set up QEMU
+  uses: docker/setup-qemu-action@v3
+
+# 构建步骤添加 platforms 参数
+- name: Build and push
+  uses: docker/build-push-action@v5
+  with:
+    platforms: linux/amd64,linux/arm64</code></pre>
+
+<h3>3. SQLite 配置节点</h3>
+<pre><code>// 新增 sqlitedb 配置节点
+{
+  "id": "ffos_sqlite_db",
+  "type": "sqlitedb",
+  "db": "/data/db/focus_fitness.db",
+  "mode": "RWC"
+}
+// 6 个 sqlite 节点添加: "db": "ffos_sqlite_db"</code></pre>
+
+<h3>4. 认证加固 — scrypt 密码验证</h3>
+<pre><code>// 修复前: 明文密码直接比较
+users = [{ username: 'admin', password: 'admin123' }];
+if (users[i].password === password) { ... }
+
+// 修复后: scrypt 哈希 + timingSafeEqual
+users = [{ username: 'admin', password_hash: 'ad19b5...:c6ff7b...' }];
+function verifyPassword(password, storedHash) {
+    var parts = storedHash.split(':');
+    var salt = Buffer.from(parts[0], 'hex');
+    var hash = Buffer.from(parts[1], 'hex');
+    var computedHash = crypto.scryptSync(password, salt, 64);
+    return crypto.timingSafeEqual(hash, computedHash);
+}</code></pre>
+
+<h3>5. Refresh Token 文件持久化</h3>
+<pre><code>// 修复前: 仅内存存储 (容器重启后丢失)
+global.set('refresh_tokens', refreshStore);
+
+// 修复后: 文件持久化 (容器重启后保留)
+var REFRESH_FILE = '/data/db/refresh_tokens.json';
+fs.writeFileSync(REFRESH_FILE, JSON.stringify(refreshStore));
+// 读取时: fs.readFileSync(REFRESH_FILE, 'utf8')</code></pre>
+
+<h2>A — 执行：部署时间线</h2>
+<div class="timeline">
+  <div class="timeline-item">
+    <div class="timeline-time">Commit 63fff1d</div>
+    <div class="timeline-text">SQLite 配置 + 认证加固 + 多架构 CI/CD + Dockerfile 修复</div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-time">CI 构建失败</div>
+    <div class="timeline-text">docker-publish.yml 中文注释导致 GitHub Actions YAML 解析失败</div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-time">Commit b65c4d6</div>
+    <div class="timeline-text">移除中文注释 + 移除不兼容的 cache-from/cache-to 参数</div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-time">CI 构建成功</div>
+    <div class="timeline-text">多架构镜像 (linux/amd64 + linux/arm64) 推送到 ghcr.io</div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-time">Railway 部署</div>
+    <div class="timeline-text">更新镜像为 sha-b65c4d6 + 设置 Healthcheck Path 为 /health</div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-time">验证通过</div>
+    <div class="timeline-text">6/6 API 端点全部返回 200</div>
+  </div>
+</div>
+
+<h2>R — 反思：验证结果</h2>
+<table>
+<tr><th>端点</th><th>HTTP 状态</th><th>验证内容</th></tr>
+<tr><td><code>/health</code></td><td><span class="badge badge-ok">200</span></td><td>容器健康状态</td></tr>
+<tr><td><code>/ready</code></td><td><span class="badge badge-ok">200</span></td><td>就绪检查</td></tr>
+<tr><td><code>/metrics</code></td><td><span class="badge badge-ok">200</span></td><td>Prometheus 指标</td></tr>
+<tr><td><code>/auth/login</code></td><td><span class="badge badge-ok">200</span></td><td>scrypt 密码验证 + JWT 签发</td></tr>
+<tr><td><code>/auth/verify</code></td><td><span class="badge badge-ok">200</span></td><td>JWT 签名验证 + 负载解析</td></tr>
+<tr><td><code>/auth/refresh</code></td><td><span class="badge badge-ok">200</span></td><td>文件持久化 Refresh Token 刷新</td></tr>
+</table>
+
+<h2>关键经验教训</h2>
+<p><strong>GitHub Actions YAML 编码陷阱</strong>：中文注释会导致 GitHub Actions 工作流解析失败，错误信息为 "workflow file issue"，但不显示具体原因。解决方案：<code>.github/workflows/</code> 目录下的 YAML 文件仅使用英文注释。</p>
+<p><strong>Node-RED function 沙箱安全改进</strong>：使用 Node.js 内置 <code>crypto.scryptSync</code> + <code>crypto.timingSafeEqual</code> 替代外部 bcryptjs 依赖，减少镜像体积且无需修改 <code>package.json</code>。</p>
+<p><strong>文件持久化作为 SQLite 过渡方案</strong>：Refresh Token 使用 <code>fs.writeFileSync</code> 持久化到 JSON 文件，在 SQLite 完全配置前作为可靠的过渡方案。</p>
+
+<h2>待办事项</h2>
+<table>
+<tr><th>事项</th><th>优先级</th><th>状态</th></tr>
+<tr><td>Railway 环境变量设置 (JWT_SECRET, NODE_RED_SECRET)</td><td>中</td><td><span class="badge badge-pending">待处理</span></td></tr>
+<tr><td>SQLite 数据库初始化 (建表脚本)</td><td>中</td><td><span class="badge badge-pending">待处理</span></td></tr>
+<tr><td>Oracle Cloud Always Free 迁移</td><td>低</td><td><span class="badge badge-pending">Phase 3</span></td></tr>
+<tr><td>用户管理界面 (替代硬编码用户列表)</td><td>低</td><td><span class="badge badge-pending">Phase 4</span></td></tr>
+</table>
+
+<div class="footer">
+  SOLO-OS PRAR Cycle 2 &middot; Focus Fitness OS &middot; 2026-07-08
+</div>
+
+</body>
+</html>

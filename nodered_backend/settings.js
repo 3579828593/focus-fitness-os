@@ -67,6 +67,13 @@ module.exports = {
     flowFile: 'flows.json',
     flowFilePretty: true,
 
+    // CORS 配置：允许跨域请求 API 端点
+    httpNodeCors: {
+        origin: "*",
+        methods: "GET,POST,PUT,DELETE,OPTIONS",
+        headers: "Origin,X-Requested-With,Content-Type,Accept,Authorization"
+    },
+
     // 禁用未使用的功能以减少攻击面
     httpStatic: false,
 

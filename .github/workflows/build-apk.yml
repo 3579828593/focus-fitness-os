@@ -51,9 +51,8 @@ jobs:
       - name: Run build_runner (Drift codegen)
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Analyze code (non-blocking)
-        run: flutter analyze || true
-        continue-on-error: true
+      - name: Analyze code
+        run: flutter analyze
 
       - name: Build APK
         run: flutter build apk --release

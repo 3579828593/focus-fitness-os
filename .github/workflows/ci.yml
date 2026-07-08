@@ -38,13 +38,11 @@ jobs:
       - name: Run build_runner (Drift codegen)
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Analyze code (non-blocking)
-        run: flutter analyze || true
-        continue-on-error: true
+      - name: Analyze code
+        run: flutter analyze
 
       - name: Run tests
-        run: flutter test || true
-        continue-on-error: true
+        run: flutter test
         timeout-minutes: 5
 
       - name: Report coverage
