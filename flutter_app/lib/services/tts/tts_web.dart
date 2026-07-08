@@ -14,17 +14,19 @@ class WebTtsService implements TtsService {
 
   @override
   Future<void> speak(String text) async {
+    final synth = window.speechSynthesis;
+    if (synth == null) return;
     final utterance = SpeechSynthesisUtterance(text);
     utterance.lang = _lang;
     utterance.rate = _rate;
     utterance.volume = 1.0;
     utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
+    synth.speak(utterance);
   }
 
   @override
   Future<void> stop() async {
-    window.speechSynthesis.cancel();
+    window.speechSynthesis?.cancel();
   }
 
   @override
@@ -39,7 +41,7 @@ class WebTtsService implements TtsService {
 
   @override
   void dispose() {
-    window.speechSynthesis.cancel();
+    window.speechSynthesis?.cancel();
   }
 }
 
