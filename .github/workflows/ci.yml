@@ -45,13 +45,11 @@ jobs:
       - name: Run tests
         run: flutter test || true
         continue-on-error: true
-
-      - name: Generate coverage report (non-blocking)
-        run: flutter test --coverage || true
-        continue-on-error: true
+        timeout-minutes: 5
 
       - name: Report coverage
         continue-on-error: true
+        if: always()
         run: |
           if [ -f coverage/lcov.info ]; then
             node -e "

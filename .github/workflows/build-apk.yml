@@ -49,12 +49,9 @@ jobs:
         run: flutter analyze || true
         continue-on-error: true
 
-      - name: Run tests (non-blocking)
-        run: flutter test || true
-        continue-on-error: true
-
       - name: Build APK
         run: flutter build apk --release
+        timeout-minutes: 15
 
       - name: Rename APK
         run: |
