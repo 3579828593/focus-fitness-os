@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:riverpod/riverpod.dart';
 import 'package:drift/native.dart';
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 
 import 'package:focus_fitness_os/main.dart';
 import 'package:focus_fitness_os/data/database.dart';

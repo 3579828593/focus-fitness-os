@@ -104,18 +104,18 @@ class TestApp extends StatelessWidget {
         GoRoute(
           path: '/schedule/:date',
           builder: (_, state) =>
-              ScheduleScreen(date: state.pathParams['date']!),
+              ScheduleScreen(date: state.pathParameters['date']!),
         ),
         GoRoute(
           path: '/session/focus/:entryId',
           builder: (_, state) => FocusSessionScreen(
-            entryId: int.parse(state.pathParams['entryId']!),
+            entryId: int.parse(state.pathParameters['entryId']!),
           ),
         ),
         GoRoute(
           path: '/session/workout/:entryId',
           builder: (_, state) => WorkoutSessionScreen(
-            entryId: int.parse(state.pathParams['entryId']!),
+            entryId: int.parse(state.pathParameters['entryId']!),
           ),
         ),
         GoRoute(

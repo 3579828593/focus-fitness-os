@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../main.dart';
+import '../data/database.dart';
 import '../data/daos/daos.dart';
 import '../data/tables.dart';
 

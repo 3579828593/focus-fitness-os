@@ -44,7 +44,7 @@ class HomeScreen extends HookConsumerWidget {
         title: const Text('专注健身OS'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outline),
+            icon: const Icon(Icons.notifications_outlined),
             onPressed: () => context.push('/proposals'),
           ),
         ],

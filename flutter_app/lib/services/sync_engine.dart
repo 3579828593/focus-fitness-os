@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 
 import '../data/database.dart';
@@ -608,7 +609,7 @@ class SyncEngine {
       final rows = await _db
           .customSelect(
             'SELECT * FROM $table WHERE $pkCol = ?',
-            [recordId],
+            variables: [Variable.withInt(recordId)],
           )
           .get();
       if (rows.isEmpty) return null;
