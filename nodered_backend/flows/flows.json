@@ -794,7 +794,9 @@
     "method": "get",
     "swaggerDoc": "",
     "wires": [
-      "f8_metrics_render"
+      [
+        "f8_metrics_render"
+      ]
     ]
   },
   {
@@ -809,7 +811,9 @@
     "finalize": "",
     "libs": [],
     "wires": [
-      "f8_metrics_http_resp"
+      [
+        "f8_metrics_http_resp"
+      ]
     ]
   },
   {
@@ -832,7 +836,9 @@
     "method": "post",
     "swaggerDoc": "",
     "wires": [
-      "f8_metrics_session_update"
+      [
+        "f8_metrics_session_update"
+      ]
     ]
   },
   {
@@ -847,7 +853,9 @@
     "finalize": "",
     "libs": [],
     "wires": [
-      "f8_metrics_session_resp"
+      [
+        "f8_metrics_session_resp"
+      ]
     ]
   },
   {
@@ -870,7 +878,9 @@
     "method": "post",
     "swaggerDoc": "",
     "wires": [
-      "f8_metrics_proposal_update"
+      [
+        "f8_metrics_proposal_update"
+      ]
     ]
   },
   {
@@ -885,7 +895,9 @@
     "finalize": "",
     "libs": [],
     "wires": [
-      "f8_metrics_proposal_resp"
+      [
+        "f8_metrics_proposal_resp"
+      ]
     ]
   },
   {
@@ -908,7 +920,9 @@
     "method": "post",
     "swaggerDoc": "",
     "wires": [
-      "f8_metrics_api_update"
+      [
+        "f8_metrics_api_update"
+      ]
     ]
   },
   {
@@ -923,7 +937,9 @@
     "finalize": "",
     "libs": [],
     "wires": [
-      "f8_metrics_api_resp"
+      [
+        "f8_metrics_api_resp"
+      ]
     ]
   },
   {
@@ -946,7 +962,9 @@
     "method": "post",
     "swaggerDoc": "",
     "wires": [
-      "f8_metrics_sync_update"
+      [
+        "f8_metrics_sync_update"
+      ]
     ]
   },
   {
@@ -961,7 +979,9 @@
     "finalize": "",
     "libs": [],
     "wires": [
-      "f8_metrics_sync_resp"
+      [
+        "f8_metrics_sync_resp"
+      ]
     ]
   },
   {
