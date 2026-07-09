@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Fitness OS API</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+    h1 { color: #2563eb; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+    .endpoint { margin: 8px 0; padding: 8px; background: #f8fafc; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Focus Fitness OS API</h1>
+  <p>Cloudflare Pages Functions backend is running.</p>
+  <h2>Endpoints</h2>
+  <div class="endpoint"><code>GET /health</code> — Health check</div>
+  <div class="endpoint"><code>GET /ready</code> — Readiness check (D1 connectivity)</div>
+  <div class="endpoint"><code>POST /api/v1/auth/login</code> — Login</div>
+  <div class="endpoint"><code>POST /api/v1/auth/refresh</code> — Refresh token</div>
+  <div class="endpoint"><code>GET /api/v1/proposals</code> — List proposals</div>
+  <div class="endpoint"><code>GET /api/v1/stats/weekly</code> — Weekly stats</div>
+</body>
+</html>

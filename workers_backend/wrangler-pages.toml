@@ -1,0 +1,12 @@
+name = "focus-fitness-os-api"
+pages_build_output_dir = "public"
+compatibility_date = "2024-09-25"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+CORS_ALLOWED_ORIGINS = "https://3579828593.github.io"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "focus-fitness-os-db"
+database_id = "773948a2-3a79-48cd-9035-9e1e53fc1dd1"

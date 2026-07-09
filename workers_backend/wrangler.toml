@@ -21,6 +21,21 @@ crons = ["0 22 * * *", "0 8 * * 1"]
 # JWT_SECRET 作为 Secret 配置 (不写入 vars, 通过 wrangler secret put JWT_SECRET 设置)
 # API_PASSWORD_HASH 同理: wrangler secret put API_PASSWORD_HASH
 
+# ---------- Cloudflare Pages (pages.dev 中国可访问) ----------
+[env.pages]
+name = "focus-fitness-os-api-pages"
+pages_build_output_dir = "public"
+compatibility_date = "2024-09-25"
+compatibility_flags = ["nodejs_compat"]
+
+[env.pages.vars]
+CORS_ALLOWED_ORIGINS = "https://3579828593.github.io"
+
+[[env.pages.d1_databases]]
+binding = "DB"
+database_name = "focus-fitness-os-db"
+database_id = "773948a2-3a79-48cd-9035-9e1e53fc1dd1"
+
 # ---------- 本地开发环境 ----------
 [env.staging]
 name = "focus-fitness-os-api-staging"
@@ -36,7 +51,7 @@ CORS_ALLOWED_ORIGINS = "https://3579828593.github.io"
 [env.staging.triggers]
 crons = ["0 22 * * *", "0 8 * * 1"]
 
-# ---------- 生产环境 ----------
+# ---------- 生产环境 (Workers) ----------
 [env.production]
 name = "focus-fitness-os-api"
 
