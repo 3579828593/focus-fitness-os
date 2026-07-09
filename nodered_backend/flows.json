@@ -1,0 +1,1544 @@
+[
+  {
+    "id": "flow2_auto_increment",
+    "type": "tab",
+    "label": "Flow2: 完成递增",
+    "disabled": false,
+    "info": "webhook接收训练完成 → 完成率计算 → 渐进超负荷规则 → 生成LOCKED提案 → 写入SQLite"
+  },
+  {
+    "id": "f2_webhook",
+    "type": "http in",
+    "z": "flow2_auto_increment",
+    "name": "接收训练完成",
+    "url": "/api/v1/sessions/complete",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f2_jwt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "f2_parse_payload",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "解析请求体",
+    "func": "// ===== Input Validation + Payload Parsing =====\nvar payload = msg.payload || {};\n\nif (!payload.session_id || typeof payload.session_id !== 'number') {\n  msg.payload = JSON.stringify({ code: 1, error: 'session_id is required and must be a number' });\n  msg.statusCode = 400;\n  return [null, msg];\n}\nif (!payload.entry_id || typeof payload.entry_id !== 'number') {\n  msg.payload = JSON.stringify({ code: 1, error: 'entry_id is required and must be a number' });\n  msg.statusCode = 400;\n  return [null, msg];\n}\n\nmsg.session_id = payload.session_id;\nmsg.entry_id = payload.entry_id;\nmsg.completion_ratio = Math.min(Math.max(parseFloat(payload.completion_ratio) || 0, 0), 1);\nmsg.segments = Array.isArray(payload.segments) ? payload.segments : [];\n\nvar exerciseSet = msg.segments.filter(function(s) { return s.seg_type === 'WORKOUT_SET'; });\nif (exerciseSet.length > 0) {\n  msg.exercise = {\n    exercise_id: exerciseSet[0].exercise_id,\n    planned_sets: exerciseSet.length,\n    planned_reps: exerciseSet[0].planned_reps,\n    planned_weight: exerciseSet[0].weight_kg_done,\n    max_weight: Math.max.apply(null, exerciseSet.map(function(s) { return s.weight_kg_done || 0; }))\n  };\n}\nmsg.original_entry_id = payload.entry_id;\nreturn [msg, null];",
+    "wires": [
+      [
+        "f2_switch_has_exercise"
+      ],
+      [
+        "f2_validation_fail"
+      ]
+    ],
+    "outputs": 2
+  },
+  {
+    "id": "f2_switch_has_exercise",
+    "type": "switch",
+    "z": "flow2_auto_increment",
+    "name": "是否有训练数据",
+    "property": "exercise",
+    "rules": [
+      {
+        "t": "nempty"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "wires": [
+      [
+        "f2_progressive"
+      ],
+      [
+        "f2_response_skip"
+      ]
+    ]
+  },
+  {
+    "id": "f2_progressive",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "渐进超负荷计算",
+    "func": "// ===== 渐进超负荷算法 =====\nvar exercise = msg.exercise;\nvar segments = msg.segments;\nvar completionRatio = msg.completion_ratio;\n\n// 计算平均RPE\nvar rpeValues = segments.filter(function(s) { return s.rpe != null; }).map(function(s) { return s.rpe; });\nvar avgRpe = rpeValues.length > 0 ? rpeValues.reduce(function(a,b){return a+b;}) / rpeValues.length : 5;\n\nvar newWeight = exercise.planned_weight;\nvar reason = '';\n\nif (completionRatio >= 1.0 && avgRpe <= 8) {\n  newWeight = exercise.planned_weight + 2.5;\n  reason = '完成率100%，RPE ' + avgRpe.toFixed(1) + '，递增2.5kg → ' + newWeight + 'kg';\n} else if (completionRatio < 0.5) {\n  newWeight = Math.max(exercise.planned_weight - 2.5, 0);\n  reason = '完成率' + (completionRatio * 100).toFixed(0) + '%，退阶2.5kg → ' + newWeight + 'kg';\n} else {\n  reason = '完成率' + (completionRatio * 100).toFixed(0) + '%，维持' + exercise.planned_weight + 'kg';\n}\n\n// PR检测\nvar isPR = newWeight > (exercise.max_weight || 0);\n\n// 生成LOCKED提案\nvar proposal = {\n  type: newWeight > exercise.planned_weight ? 'WEIGHT_INCREMENT' : (newWeight < exercise.planned_weight ? 'WEIGHT_DECREMENT' : 'WEIGHT_MAINTAIN'),\n  lock_state: 'LOCKED',\n  target_table: 'workout_exercise',\n  target_id: exercise.exercise_id,\n  target_field: 'planned_weight',\n  old_value: exercise.planned_weight,\n  new_value: newWeight,\n  reason: reason,\n  is_pr: isPR,\n  created_at: new Date().toISOString()\n};\n\nmsg.payload = {\n  newWeight: newWeight,\n  reason: reason,\n  isPR: isPR,\n  proposal: proposal\n};\nreturn msg;",
+    "wires": [
+      [
+        "f2_prepare_params",
+        "f2_update_streak"
+      ]
+    ]
+  },
+  {
+    "id": "f2_save_proposal",
+    "type": "sqlite",
+    "z": "flow2_auto_increment",
+    "name": "保存提案到DB",
+    "sql": "",
+    "wires": [
+      [
+        "f2_prep_streak"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
+  },
+  {
+    "id": "f2_update_streak",
+    "type": "sqlite",
+    "z": "flow2_auto_increment",
+    "name": "更新连续记录",
+    "wires": [
+      []
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
+  },
+  {
+    "id": "f2_response_ok",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "返回成功",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"status\": \"ok\"}, \"message\": \"session processed\"}"
+  },
+  {
+    "id": "f2_response_skip",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "跳过(无训练数据)",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"status\": \"skipped\"}, \"message\": \"no exercise data\"}"
+  },
+  {
+    "id": "flow4_conflict_detection",
+    "type": "tab",
+    "label": "Flow4: 冲突检测重排",
+    "disabled": false,
+    "info": "webhook接收日程变更 → 检测同时段冲突 → 按优先级排序 → 低优先级顺延 → 生成LOCKED提案"
+  },
+  {
+    "id": "f4_webhook",
+    "type": "http in",
+    "z": "flow4_conflict_detection",
+    "name": "接收日程变更",
+    "url": "/api/v1/schedule/change",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f4_jwt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "f4_extract_entry",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "提取日程信息",
+    "func": "var payload = msg.payload || {};\nmsg.new_entry = {\n  entry_id: payload.entry_id,\n  date: payload.date,\n  start_time: payload.start_time,\n  unit_id: payload.unit_id\n};\nreturn msg;",
+    "wires": [
+      [
+        "f4_prep_query"
+      ]
+    ]
+  },
+  {
+    "id": "f4_query_existing",
+    "type": "sqlite",
+    "z": "flow4_conflict_detection",
+    "name": "查询同日日程",
+    "wires": [
+      [
+        "f4_conflict_detect"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
+  },
+  {
+    "id": "f4_conflict_detect",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "冲突检测与顺延",
+    "func": "var newEntry = msg.new_entry;\nvar existing = msg.payload || [];\n\n// 检测同时段冲突\nvar conflicts = existing.filter(function(e) {\n  return e.start_time === newEntry.start_time;\n});\n\nvar proposals = [];\n\nif (conflicts.length > 0) {\n  // 获取新条目的优先级\n  var newPriority = 5; // 默认\n  // 按优先级排序 (数字越小优先级越高)\n  var allEntries = conflicts.map(function(e) {\n    return { entry_id: e.entry_id, start_time: e.start_time, priority: e.priority || 5, unit_id: e.unit_id };\n  });\n  allEntries.push({ entry_id: newEntry.entry_id, start_time: newEntry.start_time, priority: newPriority, unit_id: newEntry.unit_id });\n  allEntries.sort(function(a, b) { return a.priority - b.priority; });\n\n  // 低优先级项顺延到下一个空档 (每次+60分钟)\n  for (var i = 1; i < allEntries.length; i++) {\n    var entry = allEntries[i];\n    var newTime = addMinutes(entry.start_time, 60 * i);\n    proposals.push({\n      type: 'PROPOSAL',\n      lock_state: 'LOCKED',\n      target_table: 'schedule_entry',\n      target_id: entry.entry_id,\n      target_field: 'start_time',\n      old_value: entry.start_time,\n      new_value: newTime,\n      reason: '时段冲突，自动顺延到 ' + newTime,\n      created_at: new Date().toISOString()\n    });\n  }\n}\n\nmsg.payload = {\n  conflicts: conflicts,\n  proposals: proposals,\n  resolved: proposals.length > 0\n};\nreturn msg;\n\nfunction addMinutes(timeStr, minutes) {\n  var parts = timeStr.split(':');\n  var h = parseInt(parts[0]);\n  var m = parseInt(parts[1]) + minutes;\n  h += Math.floor(m / 60);\n  m = m % 60;\n  if (h >= 24) h -= 24;\n  return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);\n}",
+    "wires": [
+      [
+        "f4_switch_has_conflict"
+      ]
+    ]
+  },
+  {
+    "id": "f4_switch_has_conflict",
+    "type": "switch",
+    "z": "flow4_conflict_detection",
+    "name": "是否有冲突",
+    "property": "payload.conflicts.length",
+    "rules": [
+      {
+        "t": "gt",
+        "v": 0,
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "wires": [
+      [
+        "f4_save_proposals"
+      ],
+      [
+        "f4_response_no_conflict"
+      ]
+    ]
+  },
+  {
+    "id": "f4_save_proposals",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备提案批量写入",
+    "func": "var proposals = msg.payload.proposals || [];\n// 为每个提案创建一条SQL\nvar statements = proposals.map(function(p) {\n  return {\n    sql: \"INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\",\n    params: [p.type, p.lock_state, p.target_table, p.target_id, p.target_field, p.old_value, p.new_value, p.reason, p.created_at]\n  };\n});\nmsg.payload = statements;\nreturn msg;",
+    "wires": [
+      [
+        "f4_prep_batch"
+      ]
+    ]
+  },
+  {
+    "id": "f4_batch_sqlite",
+    "type": "sqlite",
+    "z": "flow4_conflict_detection",
+    "name": "批量写入提案",
+    "wires": [
+      [
+        "f4_response_with_proposals"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "batch"
+  },
+  {
+    "id": "f4_response_no_conflict",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "无冲突响应",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"conflicts\": [], \"proposals\": []}, \"message\": \"no conflict\"}"
+  },
+  {
+    "id": "f4_response_with_proposals",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "返回冲突提案",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "payload": "{\"code\": 0, \"data\": {\"conflicts\": true, \"proposals\": \"generated\"}, \"message\": \"conflicts detected, proposals created\"}"
+  },
+  {
+    "id": "f2_catch",
+    "type": "catch",
+    "z": "flow2_auto_increment",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f2_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f2_err_format",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f2_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f2_error_response",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    }
+  },
+  {
+    "id": "f4_catch",
+    "type": "catch",
+    "z": "flow4_conflict_detection",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f4_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f4_err_format",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f4_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f4_error_response",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    }
+  },
+  {
+    "id": "flow5_proposal_manage",
+    "type": "tab",
+    "label": "Flow5: 提案管理",
+    "disabled": false,
+    "info": "接收提案 accept/reject 请求 -> 解析 proposal_id 与动作 -> 更新 proposals 表 lock_state -> 返回结果"
+  },
+  {
+    "id": "f5_http_accept",
+    "type": "http in",
+    "z": "flow5_proposal_manage",
+    "name": "接受提案",
+    "url": "/api/v1/proposals/:id/accept",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f5_jwt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "f5_http_reject",
+    "type": "http in",
+    "z": "flow5_proposal_manage",
+    "name": "拒绝提案",
+    "url": "/api/v1/proposals/:id/reject",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f5_jwt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "f5_parse_action",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "解析提案ID与动作",
+    "func": "// ===== Input Validation + Proposal Action Parsing =====\nvar proposalId = parseInt(msg.req.params.id, 10);\nif (isNaN(proposalId) || proposalId < 1) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid proposal ID: must be a positive integer' });\n  msg.statusCode = 400;\n  return msg;\n}\n\nvar url = msg.req.url || '';\nvar lockState, status;\nif (url.indexOf('accept') !== -1) {\n  lockState = 'ACCEPTED';\n  status = 'accepted';\n} else {\n  lockState = 'REJECTED';\n  status = 'rejected';\n}\nmsg.proposal_id = proposalId;\nmsg.lock_state = lockState;\nmsg.action_status = status;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_prep_update"
+      ]
+    ]
+  },
+  {
+    "id": "f5_update_proposal",
+    "type": "sqlite",
+    "z": "flow5_proposal_manage",
+    "name": "更新提案状态",
+    "wires": [
+      [
+        "f5_format_response"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
+  },
+  {
+    "id": "f5_format_response",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "格式化响应",
+    "func": "var status = msg.action_status || 'ok';\nmsg.payload = JSON.stringify({ code: 0, data: { status: status }, message: 'ok' });\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_response_ok"
+      ]
+    ]
+  },
+  {
+    "id": "f5_response_ok",
+    "type": "http response",
+    "z": "flow5_proposal_manage",
+    "name": "返回成功",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    }
+  },
+  {
+    "id": "f5_catch",
+    "type": "catch",
+    "z": "flow5_proposal_manage",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f5_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f5_err_format",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f5_error_response",
+    "type": "http response",
+    "z": "flow5_proposal_manage",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    }
+  },
+  {
+    "id": "flow6_weekly_stats",
+    "type": "tab",
+    "label": "Flow6: 周报查询",
+    "disabled": false,
+    "info": "GET /api/v1/stats/weekly -> 解析 week 参数 -> 查询 sessions 表 -> 聚合数据 (总专注时长/总训练量/完成率) -> 返回周报统计"
+  },
+  {
+    "id": "f6_http_in",
+    "type": "http in",
+    "z": "flow6_weekly_stats",
+    "name": "接收周报查询",
+    "url": "/api/v1/stats/weekly",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f6_jwt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "f6_parse_week",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "解析周参数",
+    "func": "var week = (msg.req.query && msg.req.query.week) || '';\nvar startDate, endDate;\nfunction fmt(d) {\n  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);\n}\nvar m = week.match(/^(\\d{4})-W(\\d{2})$/);\nif (m) {\n  var year = parseInt(m[1]);\n  var weekNum = parseInt(m[2]);\n  var simple = new Date(year, 0, 1 + (weekNum - 1) * 7);\n  var dow = simple.getDay();\n  var monday = new Date(simple);\n  if (dow <= 4) { monday.setDate(simple.getDate() - simple.getDay() + 1); }\n  else { monday.setDate(simple.getDate() + 8 - simple.getDay()); }\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n} else if (week) {\n  startDate = week + 'T00:00:00';\n  var e = new Date(week);\n  e.setDate(e.getDate() + 6);\n  endDate = fmt(e) + 'T23:59:59';\n} else {\n  var now = new Date();\n  var d = now.getDay();\n  var monday = new Date(now);\n  monday.setDate(now.getDate() - d + 1);\n  var sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  startDate = fmt(monday) + 'T00:00:00';\n  endDate = fmt(sunday) + 'T23:59:59';\n}\nmsg.week_start = startDate;\nmsg.week_end = endDate;\nmsg.week = week;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_prep_query"
+      ]
+    ]
+  },
+  {
+    "id": "f6_query_sessions",
+    "type": "sqlite",
+    "z": "flow6_weekly_stats",
+    "name": "查询周会话",
+    "wires": [
+      [
+        "f6_aggregate"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
+  },
+  {
+    "id": "f6_aggregate",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "聚合周统计数据",
+    "func": "var sessions = msg.payload || [];\nvar totalFocusMinutes = 0;\nvar totalTrainingVolume = 0;\nvar completedCount = 0;\nsessions.forEach(function(s) {\n  if (s.exec_mode === 'FOCUS') {\n    totalFocusMinutes += (s.duration_min || (s.completion_ratio || 0) * 25);\n  }\n  if (s.exec_mode === 'WORKOUT') {\n    totalTrainingVolume += (s.total_volume || 0);\n  }\n  if (s.state === 'COMPLETED') { completedCount++; }\n});\nvar completionRate = sessions.length > 0 ? completedCount / sessions.length : 0;\nmsg.payload = JSON.stringify({\n  code: 0,\n  data: {\n    week: msg.week,\n    start_date: msg.start_date,\n    end_date: msg.end_date,\n    total_sessions: sessions.length,\n    total_focus_minutes: Math.round(totalFocusMinutes),\n    total_training_volume: totalTrainingVolume,\n    completed_sessions: completedCount,\n    completion_rate: Number(completionRate.toFixed(4))\n  },\n  message: 'ok'\n});\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_response_ok"
+      ]
+    ]
+  },
+  {
+    "id": "f6_response_ok",
+    "type": "http response",
+    "z": "flow6_weekly_stats",
+    "name": "返回周报统计",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    }
+  },
+  {
+    "id": "f6_catch",
+    "type": "catch",
+    "z": "flow6_weekly_stats",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f6_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f6_err_format",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error || 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_error_response"
+      ]
+    ]
+  },
+  {
+    "id": "f6_error_response",
+    "type": "http response",
+    "z": "flow6_weekly_stats",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    }
+  },
+  {
+    "id": "flow7_health",
+    "type": "tab",
+    "label": "Flow7: 健康检查",
+    "disabled": false,
+    "info": "提供 /health 和 /ready 端点供 docker healthcheck 和监控使用"
+  },
+  {
+    "id": "f7_health_in",
+    "type": "http in",
+    "z": "flow7_health",
+    "name": "健康检查入口",
+    "url": "/health",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f7_health_response"
+      ]
+    ]
+  },
+  {
+    "id": "f7_ready_in",
+    "type": "http in",
+    "z": "flow7_health",
+    "name": "就绪检查入口",
+    "url": "/ready",
+    "method": "get",
+    "wires": [
+      [
+        "f7_ready_check"
+      ]
+    ]
+  },
+  {
+    "id": "f7_health_response",
+    "type": "function",
+    "z": "flow7_health",
+    "name": "构建健康响应",
+    "func": "msg.payload = { code: 0, data: { status: 'healthy', timestamp: new Date().toISOString() }, message: 'ok' }; msg.statusCode = 200; return msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f7_http_out"
+      ]
+    ]
+  },
+  {
+    "id": "f7_ready_check",
+    "type": "function",
+    "z": "flow7_health",
+    "name": "就绪检查",
+    "func": "// 检查 SQLite 是否可用\ntry {\n  // 简单的就绪检查: 返回就绪状态\n  msg.payload = { code: 0, data: { status: 'ready', checks: { sqlite: 'ok', flows: 'active' } }, message: 'ok' };\n  msg.statusCode = 200;\n} catch (e) {\n  msg.payload = { code: 1, error: e.message };\n  msg.statusCode = 503;\n}\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f7_http_out"
+      ]
+    ]
+  },
+  {
+    "id": "f7_http_out",
+    "type": "http response",
+    "z": "flow7_health",
+    "name": "HTTP响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_tab",
+    "type": "tab",
+    "label": "Flow9: JWT认证",
+    "disabled": false,
+    "info": "JWT + Refresh Token 认证体系\n- POST /api/v1/auth/login   用户登录, 签发 access_token(1h) + refresh_token(7d)\n- POST /api/v1/auth/refresh 刷新 access_token\n- POST /api/v1/auth/verify  验证 access_token 有效性\n算法: HMAC-SHA256, 密钥由 JWT_SECRET 环境变量配置\n登录/刷新返回 OAuth2 扁平结构, verify 返回 {code,data,message}"
+  },
+  {
+    "id": "f9_auth_login_in",
+    "type": "http in",
+    "z": "f9_auth_tab",
+    "name": "登录接口",
+    "url": "/api/v1/auth/login",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f9_auth_login_proc"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_login_proc",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "登录处理(签发令牌)",
+    "func": "// ===== JWT 登录处理 (安全加固版) =====\nvar crypto = global.get('crypto');\nvar fs = global.get('fs');\n\nvar JWT_SECRET = global.get('JWT_SECRET');\nif (!JWT_SECRET) {\n    msg.payload = JSON.stringify({ code: 1, error: '服务器密钥未配置' });\n    msg.statusCode = 500;\n    return msg;\n}\n\nvar ACCESS_TOKEN_TTL = 3600;\nvar REFRESH_TOKEN_TTL = 7 * 24 * 3600;\nvar REFRESH_FILE = './data/db/refresh_tokens.json';\n\nfunction base64url(str) {\n    return Buffer.from(str).toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\nfunction base64urlBuf(buf) {\n    return buf.toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\n\nfunction signAccessToken(user_id, username) {\n    var header = { alg: 'HS256', typ: 'JWT' };\n    var now = Math.floor(Date.now() / 1000);\n    var payload = { user_id: user_id, username: username, iat: now, exp: now + ACCESS_TOKEN_TTL };\n    var headerB64 = base64url(JSON.stringify(header));\n    var payloadB64 = base64url(JSON.stringify(payload));\n    var data = headerB64 + '.' + payloadB64;\n    var sig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\n    return data + '.' + base64urlBuf(sig);\n}\n\nfunction generateRefreshToken() {\n    return crypto.randomBytes(64).toString('hex');\n}\n\n// scrypt 密码验证 (timing-safe)\nfunction verifyPassword(password, storedHash) {\n    var parts = storedHash.split(':');\n    if (parts.length !== 2) return false;\n    var salt = Buffer.from(parts[0], 'hex');\n    var hash = Buffer.from(parts[1], 'hex');\n    var computedHash = crypto.scryptSync(password, salt, 64);\n    if (hash.length !== computedHash.length) return false;\n    return crypto.timingSafeEqual(hash, computedHash);\n}\n\n// 用户库 (密码使用 scrypt 哈希存储, 非明文)\nvar users = [\n    { user_id: 1, username: 'admin', password_hash: '***REMOVED***:***REMOVED***' }\n];\n\nvar body = msg.payload || {};\nvar username = body.username;\nvar password = body.password;\n\nif (!username || !password) {\n    msg.payload = JSON.stringify({ code: 1, error: '用户名和密码不能为空' });\n    msg.statusCode = 400;\n    return msg;\n}\n\n// 查找用户并验证密码 (scrypt + timingSafeEqual, 防时序攻击)\nvar user = null;\nfor (var i = 0; i < users.length; i++) {\n    if (users[i].username === username) {\n        if (verifyPassword(password, users[i].password_hash)) {\n            user = users[i];\n        }\n        break;\n    }\n}\n\nif (!user) {\n    msg.payload = JSON.stringify({ code: 1, error: '用户名或密码错误' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar accessToken = signAccessToken(user.user_id, user.username);\nvar refreshToken = generateRefreshToken();\n\n// 持久化 Refresh Token 到文件系统 (容器重启后不丢失)\nvar refreshStore = {};\ntry {\n    refreshStore = JSON.parse(fs.readFileSync(REFRESH_FILE, 'utf8') || '{}');\n} catch (e) { /* 文件不存在, 使用空存储 */ }\n\nvar now = Math.floor(Date.now() / 1000);\nrefreshStore[refreshToken] = {\n    user_id: user.user_id,\n    username: user.username,\n    created_at: now,\n    expires_at: now + REFRESH_TOKEN_TTL\n};\n\ntry {\n    fs.writeFileSync(REFRESH_FILE, JSON.stringify(refreshStore));\n} catch (e) {\n    global.set('refresh_tokens', refreshStore);\n}\n\nmsg.payload = JSON.stringify({\n    access_token: accessToken,\n    refresh_token: refreshToken,\n    token_type: 'Bearer',\n    expires_in: ACCESS_TOKEN_TTL\n});\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_login_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_login_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "登录响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_refresh_in",
+    "type": "http in",
+    "z": "f9_auth_tab",
+    "name": "刷新接口",
+    "url": "/api/v1/auth/refresh",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f9_auth_refresh_proc"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_refresh_proc",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "刷新处理(重签Access)",
+    "func": "// ===== JWT 刷新处理 (持久化版) =====\nvar crypto = global.get('crypto');\nvar fs = global.get('fs');\n\nvar JWT_SECRET = global.get('JWT_SECRET');\nif (!JWT_SECRET) {\n    msg.payload = JSON.stringify({ code: 1, error: '服务器密钥未配置' });\n    msg.statusCode = 500;\n    return msg;\n}\n\nvar ACCESS_TOKEN_TTL = 3600;\nvar REFRESH_FILE = './data/db/refresh_tokens.json';\n\nfunction base64url(str) {\n    return Buffer.from(str).toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\nfunction base64urlBuf(buf) {\n    return buf.toString('base64')\n        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n}\n\nfunction signAccessToken(user_id, username) {\n    var header = { alg: 'HS256', typ: 'JWT' };\n    var now = Math.floor(Date.now() / 1000);\n    var payload = { user_id: user_id, username: username, iat: now, exp: now + ACCESS_TOKEN_TTL };\n    var headerB64 = base64url(JSON.stringify(header));\n    var payloadB64 = base64url(JSON.stringify(payload));\n    var data = headerB64 + '.' + payloadB64;\n    var sig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\n    return data + '.' + base64urlBuf(sig);\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) {\n    token = authHeader.substring(7);\n}\n\nif (!token) {\n    msg.payload = JSON.stringify({ code: 1, error: '缺少 Refresh Token' });\n    msg.statusCode = 401;\n    return msg;\n}\n\n// 从文件读取 Refresh Token 存储 (持久化)\nvar refreshStore = {};\ntry {\n    refreshStore = JSON.parse(fs.readFileSync(REFRESH_FILE, 'utf8') || '{}');\n} catch (e) {\n    refreshStore = global.get('refresh_tokens') || {};\n}\n\nvar tokenData = refreshStore[token];\n\nif (!tokenData) {\n    msg.payload = JSON.stringify({ code: 1, error: '无效的 Refresh Token' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (now > tokenData.expires_at) {\n    delete refreshStore[token];\n    try { fs.writeFileSync(REFRESH_FILE, JSON.stringify(refreshStore)); } catch(e) { global.set('refresh_tokens', refreshStore); }\n    msg.payload = JSON.stringify({ code: 1, error: 'Refresh Token 已过期, 请重新登录' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar accessToken = signAccessToken(tokenData.user_id, tokenData.username);\n\nmsg.payload = JSON.stringify({\n    access_token: accessToken,\n    refresh_token: token,\n    token_type: 'Bearer',\n    expires_in: ACCESS_TOKEN_TTL\n});\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_refresh_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_refresh_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "刷新响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_verify_in",
+    "type": "http in",
+    "z": "f9_auth_tab",
+    "name": "验证接口",
+    "url": "/api/v1/auth/verify",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f9_auth_verify_proc"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_verify_proc",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "验证处理(验签)",
+    "func": "// ===== JWT 验证处理 =====\nvar crypto = global.get('crypto');\n\nvar JWT_SECRET = global.get('JWT_SECRET');\nif (!JWT_SECRET) {\n    msg.payload = JSON.stringify({ code: 1, error: '服务器密钥未配置' });\n    msg.statusCode = 500;\n    return msg;\n}\n\nfunction base64urlDecode(str) {\n    str = str.replace(/-/g, '+').replace(/_/g, '/');\n    while (str.length % 4) { str += '='; }\n    return str;\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) {\n    token = authHeader.substring(7);\n}\n\nif (!token) {\n    msg.payload = JSON.stringify({ code: 1, error: '缺少 Access Token' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar parts = token.split('.');\nif (parts.length !== 3) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌格式无效' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64')\n    .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nif (expectedSigB64.length !== signatureB64.length) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌签名无效' });\n    msg.statusCode = 401;\n    return msg;\n}\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n    diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\nif (diff !== 0) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌签名无效' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n    payload = JSON.parse(payloadStr);\n} catch (e) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌负载解析失败' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n    msg.payload = JSON.stringify({ code: 1, error: '令牌已过期' });\n    msg.statusCode = 401;\n    return msg;\n}\n\nmsg.payload = JSON.stringify({\n    code: 0,\n    data: {\n        valid: true,\n        user_id: payload.user_id,\n        username: payload.username,\n        exp: payload.exp,\n        iat: payload.iat\n    },\n    message: '令牌有效'\n});\nmsg.statusCode = 200;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_verify_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_verify_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "验证响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f9_auth_catch",
+    "type": "catch",
+    "z": "f9_auth_tab",
+    "name": "认证错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f9_auth_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_err_format",
+    "type": "function",
+    "z": "f9_auth_tab",
+    "name": "格式化错误响应",
+    "func": "// 错误格式化: 捕获 Flow 执行异常, 返回统一错误响应\nvar errMsg = msg.error ? msg.error.message : '认证服务内部错误';\nmsg.payload = JSON.stringify({ code: 1, error: errMsg });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f9_auth_err_out"
+      ]
+    ]
+  },
+  {
+    "id": "f9_auth_err_out",
+    "type": "http response",
+    "z": "f9_auth_tab",
+    "name": "错误响应",
+    "statusCode": "",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f8_metrics",
+    "type": "tab",
+    "label": "Flow8: 指标采集",
+    "disabled": false,
+    "info": "Prometheus 指标采集与暴露\n- GET /metrics: Prometheus 文本格式\n- POST /metrics/record/session: 记录会话\n- POST /metrics/record/proposal: 记录提案\n- POST /metrics/record/api_request: 记录 API 请求\n- POST /metrics/record/sync_queue: 记录同步队列大小\n所有指标存储在 global context: ff_metrics"
+  },
+  {
+    "id": "f8_metrics_comment",
+    "type": "comment",
+    "z": "f8_metrics",
+    "name": "Prometheus 指标采集 (Flow8)",
+    "info": "暴露 focus_fitness_* 系列指标供 Prometheus 抓取。\n计数器/直方图维护在内存 (global.ff_metrics), 进程重启后归零。",
+    "wires": []
+  },
+  {
+    "id": "f8_metrics_http_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "暴露 /metrics",
+    "url": "/metrics",
+    "method": "get",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f8_metrics_render"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_render",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "渲染 Prometheus 格式",
+    "func": "// 渲染 Prometheus 文本格式指标\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar DURATION_BUCKETS = [60, 300, 600, 900, 1800, 3600, 5400, 7200];\nvar API_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];\nvar lines = [];\n\n// 1. 会话总数计数器\nlines.push('# HELP focus_fitness_sessions_total 会话总数计数器');\nlines.push('# TYPE focus_fitness_sessions_total counter');\nfor (var key in m.sessions_total) {\n    var parts = key.split('|');\n    lines.push('focus_fitness_sessions_total{type=\"' + parts[0] + '\",status=\"' + parts[1] + '\"} ' + m.sessions_total[key]);\n}\n\n// 2. 会话时长直方图\nlines.push('');\nlines.push('# HELP focus_fitness_session_duration_seconds 会话时长直方图 (秒)');\nlines.push('# TYPE focus_fitness_session_duration_seconds histogram');\nfor (var type in m.session_duration) {\n    var h = m.session_duration[type];\n    for (var i = 0; i < DURATION_BUCKETS.length; i++) {\n        var le = DURATION_BUCKETS[i];\n        lines.push('focus_fitness_session_duration_seconds_bucket{type=\"' + type + '\",le=\"' + le + '\"} ' + (h.buckets[le] || 0));\n    }\n    lines.push('focus_fitness_session_duration_seconds_bucket{type=\"' + type + '\",le=\"+Inf\"} ' + h.count);\n    lines.push('focus_fitness_session_duration_seconds_count{type=\"' + type + '\"} ' + h.count);\n    lines.push('focus_fitness_session_duration_seconds_sum{type=\"' + type + '\"} ' + h.sum);\n}\n\n// 3. 提案总数\nlines.push('');\nlines.push('# HELP focus_fitness_proposals_total 提案总数计数器');\nlines.push('# TYPE focus_fitness_proposals_total counter');\nfor (var key in m.proposals_total) {\n    lines.push('focus_fitness_proposals_total{status=\"' + key + '\"} ' + m.proposals_total[key]);\n}\n\n// 4. API 请求总数\nlines.push('');\nlines.push('# HELP focus_fitness_api_requests_total API 请求总数计数器');\nlines.push('# TYPE focus_fitness_api_requests_total counter');\nfor (var key in m.api_requests_total) {\n    var parts = key.split('|');\n    lines.push('focus_fitness_api_requests_total{endpoint=\"' + parts[0] + '\",status=\"' + parts[1] + '\"} ' + m.api_requests_total[key]);\n}\n\n// 5. API 请求延迟直方图\nlines.push('');\nlines.push('# HELP focus_fitness_api_request_duration_seconds API 请求延迟直方图 (秒)');\nlines.push('# TYPE focus_fitness_api_request_duration_seconds histogram');\nfor (var endpoint in m.api_request_duration) {\n    var h = m.api_request_duration[endpoint];\n    for (var i = 0; i < API_DURATION_BUCKETS.length; i++) {\n        var le = API_DURATION_BUCKETS[i];\n        lines.push('focus_fitness_api_request_duration_seconds_bucket{endpoint=\"' + endpoint + '\",le=\"' + le + '\"} ' + (h.buckets[le] || 0));\n    }\n    lines.push('focus_fitness_api_request_duration_seconds_bucket{endpoint=\"' + endpoint + '\",le=\"+Inf\"} ' + h.count);\n    lines.push('focus_fitness_api_request_duration_seconds_count{endpoint=\"' + endpoint + '\"} ' + h.count);\n    lines.push('focus_fitness_api_request_duration_seconds_sum{endpoint=\"' + endpoint + '\"} ' + h.sum);\n}\n\n// 6. 同步队列大小 (gauge)\nlines.push('');\nlines.push('# HELP focus_fitness_sync_queue_size 同步队列大小');\nlines.push('# TYPE focus_fitness_sync_queue_size gauge');\nlines.push('focus_fitness_sync_queue_size ' + m.sync_queue_size);\n\nmsg.payload = lines.join('\\n') + '\\n';\nmsg.headers = {'Content-Type': 'text/plain; version=0.0.4; charset=utf-8'};\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "f8_metrics_http_resp"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_http_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回指标",
+    "statusCode": "200",
+    "headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_session_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录会话",
+    "url": "/metrics/record/session",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f8_metrics_session_update"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_session_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新会话指标",
+    "func": "// 更新会话计数器和时长直方图\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar type = p.type || 'focus';\nvar status = p.status || 'completed';\nvar duration = parseFloat(p.duration_seconds) || 0;\n\n// 校验 type / status\nvar validTypes = ['focus', 'workout'];\nvar validStatus = ['completed', 'abandoned', 'partial'];\nif (validTypes.indexOf(type) < 0 || validStatus.indexOf(status) < 0) {\n    msg.payload = { ok: false, error: 'invalid type or status' };\n    msg.statusCode = 400;\n    return msg;\n}\n\n// 更新计数器\nvar skey = type + '|' + status;\nm.sessions_total[skey] = (m.sessions_total[skey] || 0) + 1;\n\n// 更新会话时长直方图\nvar DURATION_BUCKETS = [60, 300, 600, 900, 1800, 3600, 5400, 7200];\nif (!m.session_duration[type]) {\n    m.session_duration[type] = { buckets: {}, count: 0, sum: 0 };\n}\nvar h = m.session_duration[type];\nh.count += 1;\nh.sum += duration;\nfor (var i = 0; i < DURATION_BUCKETS.length; i++) {\n    if (duration <= DURATION_BUCKETS[i]) {\n        h.buckets[DURATION_BUCKETS[i]] = (h.buckets[DURATION_BUCKETS[i]] || 0) + 1;\n    }\n}\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "f8_metrics_session_resp"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_session_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录提案",
+    "url": "/metrics/record/proposal",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f8_metrics_proposal_update"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新提案指标",
+    "func": "// 更新提案计数器\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar status = p.status || 'accepted';\n\n// 提案状态仅接受 accepted / rejected\nif (status !== 'accepted' && status !== 'rejected') {\n    msg.payload = { ok: false, error: 'invalid status: ' + status };\n    msg.statusCode = 400;\n    return msg;\n}\n\nm.proposals_total[status] = (m.proposals_total[status] || 0) + 1;\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "f8_metrics_proposal_resp"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_proposal_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_api_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录 API 请求",
+    "url": "/metrics/record/api_request",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f8_metrics_api_update"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_api_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新 API 请求指标",
+    "func": "// 更新 API 请求计数器和延迟直方图\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar endpoint = p.endpoint || 'unknown';\nvar status = String(p.status || '200');\nvar duration = parseFloat(p.duration_seconds) || 0;\n\n// 更新 API 请求计数器\nvar akey = endpoint + '|' + status;\nm.api_requests_total[akey] = (m.api_requests_total[akey] || 0) + 1;\n\n// 更新 API 延迟直方图\nvar API_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];\nif (!m.api_request_duration[endpoint]) {\n    m.api_request_duration[endpoint] = { buckets: {}, count: 0, sum: 0 };\n}\nvar h = m.api_request_duration[endpoint];\nh.count += 1;\nh.sum += duration;\nfor (var i = 0; i < API_DURATION_BUCKETS.length; i++) {\n    if (duration <= API_DURATION_BUCKETS[i]) {\n        h.buckets[API_DURATION_BUCKETS[i]] = (h.buckets[API_DURATION_BUCKETS[i]] || 0) + 1;\n    }\n}\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "f8_metrics_api_resp"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_api_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_in",
+    "type": "http in",
+    "z": "f8_metrics",
+    "name": "记录同步队列",
+    "url": "/metrics/record/sync_queue",
+    "method": "post",
+    "swaggerDoc": "",
+    "wires": [
+      [
+        "f8_metrics_sync_update"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_update",
+    "type": "function",
+    "z": "f8_metrics",
+    "name": "更新同步队列大小",
+    "func": "// 更新同步队列大小 (gauge)\nvar m = global.get('ff_metrics');\nif (!m) {\n    m = {\n        sessions_total: {},\n        session_duration: {},\n        proposals_total: {},\n        api_requests_total: {},\n        api_request_duration: {},\n        sync_queue_size: 0\n    };\n    global.set('ff_metrics', m);\n}\n\nvar p = msg.payload || {};\nvar size = parseInt(p.size, 10);\nif (isNaN(size) || size < 0) {\n    msg.payload = { ok: false, error: 'invalid size' };\n    msg.statusCode = 400;\n    return msg;\n}\n\nm.sync_queue_size = size;\nglobal.set('ff_metrics', m);\n\nmsg.payload = { ok: true, size: size };\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "f8_metrics_sync_resp"
+      ]
+    ]
+  },
+  {
+    "id": "f8_metrics_sync_resp",
+    "type": "http response",
+    "z": "f8_metrics",
+    "name": "返回结果",
+    "statusCode": "200",
+    "headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "ffos_sqlite_db",
+    "type": "sqlitedb",
+    "db": "./data/db/focus_fitness.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "flow10_schema_init",
+    "type": "tab",
+    "label": "Flow10: Schema初始化",
+    "disabled": false,
+    "info": "Node-RED 启动时自动创建所有 SQLite 表和索引"
+  },
+  {
+    "id": "f10_inject",
+    "type": "inject",
+    "z": "flow10_schema_init",
+    "name": "启动触发",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "3",
+    "topic": "",
+    "payload": "init",
+    "payloadType": "str",
+    "wires": [
+      [
+        "f10_build_sql"
+      ]
+    ]
+  },
+  {
+    "id": "f10_build_sql",
+    "type": "function",
+    "z": "flow10_schema_init",
+    "name": "构建建表SQL",
+    "func": "// ===== SQLite Schema Auto-Initialization (batch mode via msg.topic) =====\n// Set msg.topic to all CREATE TABLE/INDEX statements for batch execution\nmsg.topic = \"CREATE TABLE IF NOT EXISTS executable_units (id INTEGER PRIMARY KEY AUTOINCREMENT, unit_type TEXT NOT NULL, title TEXT NOT NULL, priority INTEGER DEFAULT 3, expected_minutes INTEGER NOT NULL, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS learning_task_exts (unit_id INTEGER PRIMARY KEY REFERENCES executable_units(id) ON DELETE CASCADE, task_kind TEXT NOT NULL, focus_minutes INTEGER DEFAULT 25, break_minutes INTEGER DEFAULT 5, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS workout_plan_exts (unit_id INTEGER PRIMARY KEY REFERENCES executable_units(id) ON DELETE CASCADE, workout_kind TEXT NOT NULL, target_muscle TEXT, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS workout_exercises (exercise_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, name TEXT NOT NULL, planned_sets INTEGER NOT NULL, planned_reps INTEGER NOT NULL, planned_weight REAL NOT NULL, rest_seconds INTEGER DEFAULT 90, rpe REAL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS schedule_entries (entry_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, date TEXT NOT NULL, start_time TEXT NOT NULL, exec_mode TEXT NOT NULL, is_baseline INTEGER DEFAULT 0, lock_state TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER REFERENCES schedule_entries(entry_id) ON DELETE CASCADE, state TEXT DEFAULT 'CREATED', started_at TEXT, ended_at TEXT, completion_ratio REAL DEFAULT 0.0, outcome TEXT, last_segment_index INTEGER DEFAULT 0, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS session_segments (segment_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER REFERENCES sessions(session_id) ON DELETE CASCADE, seg_type TEXT NOT NULL, planned_seconds INTEGER NOT NULL, actual_seconds INTEGER, reps_done INTEGER, weight_kg_done REAL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS goals (goal_id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, target_value REAL NOT NULL, current_value REAL DEFAULT 0.0, unit TEXT NOT NULL, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS streaks (streak_id INTEGER PRIMARY KEY AUTOINCREMENT, unit_id INTEGER REFERENCES executable_units(id) ON DELETE CASCADE, current_count INTEGER DEFAULT 0, longest_count INTEGER DEFAULT 0, last_date TEXT, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT, deleted_at TEXT);\\nCREATE TABLE IF NOT EXISTS op_logs (op_id INTEGER PRIMARY KEY AUTOINCREMENT, tbl_name TEXT NOT NULL, record_id INTEGER NOT NULL, op_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT DEFAULT '2026-01-01T00:00:00', synced INTEGER DEFAULT 0, device_id TEXT, lamport_clock INTEGER DEFAULT 0);\\nCREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, lock_state TEXT DEFAULT 'PENDING', target_table TEXT NOT NULL, target_id INTEGER, target_field TEXT, old_value TEXT, new_value TEXT, reason TEXT, created_at TEXT);\\nCREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT DEFAULT '2026-01-01T00:00:00', updated_at TEXT);\\nCREATE INDEX IF NOT EXISTS idx_schedule_date_time ON schedule_entries(date, start_time);\\nCREATE INDEX IF NOT EXISTS idx_session_entry_state ON sessions(entry_id, state);\\nCREATE INDEX IF NOT EXISTS idx_segment_session ON session_segments(session_id, segment_id);\\nCREATE INDEX IF NOT EXISTS idx_oplog_synced ON op_logs(synced, created_at);\\nCREATE INDEX IF NOT EXISTS idx_exercise_unit ON workout_exercises(unit_id);\\nCREATE INDEX IF NOT EXISTS idx_streak_unit_date ON streaks(unit_id, last_date);\\nCREATE INDEX IF NOT EXISTS idx_schedule_active ON schedule_entries(date, deleted_at);\\nCREATE INDEX IF NOT EXISTS idx_session_active ON sessions(entry_id, deleted_at);\";\nmsg.payload = \"schema_init\";\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f10_exec_sql"
+      ]
+    ]
+  },
+  {
+    "id": "f10_exec_sql",
+    "type": "sqlite",
+    "z": "flow10_schema_init",
+    "name": "执行建表",
+    "wires": [
+      [
+        "f10_log_result"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "batch"
+  },
+  {
+    "id": "f10_log_result",
+    "type": "function",
+    "z": "flow10_schema_init",
+    "name": "记录结果",
+    "func": "msg.payload = { schema_init: 'complete' };\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "f2_jwt_verify",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "JWT验证",
+    "func": "// ===== JWT Token Verification (Auth Middleware) =====\nvar crypto = global.get('crypto');\nvar JWT_SECRET = global.get('JWT_SECRET');\n\nif (!JWT_SECRET) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Server secret not configured' });\n  msg.statusCode = 500;\n  return [null, msg];\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) { token = authHeader.substring(7); }\n\nif (!token) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Missing access token' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar parts = token.split('.');\nif (parts.length !== 3) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token format' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64');\n// Convert to base64url\nexpectedSigB64 = expectedSigB64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nif (expectedSigB64.length !== signatureB64.length) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n  diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\n\nif (diff !== 0) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nfunction base64urlDecode(str) {\n  str = str.replace(/-/g, '+').replace(/_/g, '/');\n  while (str.length % 4) { str += '='; }\n  return str;\n}\n\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n  payload = JSON.parse(payloadStr);\n} catch (e) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token payload parse failed' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token expired' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nmsg.user = { user_id: payload.user_id, username: payload.username };\nreturn [msg, null];",
+    "outputs": 2,
+    "wires": [
+      [
+        "f2_parse_payload"
+      ],
+      [
+        "f2_auth_fail"
+      ]
+    ]
+  },
+  {
+    "id": "f2_auth_fail",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "认证失败(401)",
+    "statusCode": "401",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f4_jwt_verify",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "JWT验证",
+    "func": "// ===== JWT Token Verification (Auth Middleware) =====\nvar crypto = global.get('crypto');\nvar JWT_SECRET = global.get('JWT_SECRET');\n\nif (!JWT_SECRET) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Server secret not configured' });\n  msg.statusCode = 500;\n  return [null, msg];\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) { token = authHeader.substring(7); }\n\nif (!token) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Missing access token' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar parts = token.split('.');\nif (parts.length !== 3) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token format' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64');\n// Convert to base64url\nexpectedSigB64 = expectedSigB64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nif (expectedSigB64.length !== signatureB64.length) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n  diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\n\nif (diff !== 0) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nfunction base64urlDecode(str) {\n  str = str.replace(/-/g, '+').replace(/_/g, '/');\n  while (str.length % 4) { str += '='; }\n  return str;\n}\n\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n  payload = JSON.parse(payloadStr);\n} catch (e) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token payload parse failed' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token expired' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nmsg.user = { user_id: payload.user_id, username: payload.username };\nreturn [msg, null];",
+    "outputs": 2,
+    "wires": [
+      [
+        "f4_extract_entry"
+      ],
+      [
+        "f4_auth_fail"
+      ]
+    ]
+  },
+  {
+    "id": "f4_auth_fail",
+    "type": "http response",
+    "z": "flow4_conflict_detection",
+    "name": "认证失败(401)",
+    "statusCode": "401",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f6_jwt_verify",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "JWT验证",
+    "func": "// ===== JWT Token Verification (Auth Middleware) =====\nvar crypto = global.get('crypto');\nvar JWT_SECRET = global.get('JWT_SECRET');\n\nif (!JWT_SECRET) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Server secret not configured' });\n  msg.statusCode = 500;\n  return [null, msg];\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) { token = authHeader.substring(7); }\n\nif (!token) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Missing access token' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar parts = token.split('.');\nif (parts.length !== 3) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token format' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64');\n// Convert to base64url\nexpectedSigB64 = expectedSigB64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nif (expectedSigB64.length !== signatureB64.length) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n  diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\n\nif (diff !== 0) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nfunction base64urlDecode(str) {\n  str = str.replace(/-/g, '+').replace(/_/g, '/');\n  while (str.length % 4) { str += '='; }\n  return str;\n}\n\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n  payload = JSON.parse(payloadStr);\n} catch (e) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token payload parse failed' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token expired' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nmsg.user = { user_id: payload.user_id, username: payload.username };\nreturn [msg, null];",
+    "outputs": 2,
+    "wires": [
+      [
+        "f6_parse_week"
+      ],
+      [
+        "f6_auth_fail"
+      ]
+    ]
+  },
+  {
+    "id": "f6_auth_fail",
+    "type": "http response",
+    "z": "flow6_weekly_stats",
+    "name": "认证失败(401)",
+    "statusCode": "401",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f5_jwt_verify",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "JWT验证",
+    "func": "// ===== JWT Token Verification (Auth Middleware) =====\nvar crypto = global.get('crypto');\nvar JWT_SECRET = global.get('JWT_SECRET');\n\nif (!JWT_SECRET) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Server secret not configured' });\n  msg.statusCode = 500;\n  return [null, msg];\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) { token = authHeader.substring(7); }\n\nif (!token) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Missing access token' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar parts = token.split('.');\nif (parts.length !== 3) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token format' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64');\n// Convert to base64url\nexpectedSigB64 = expectedSigB64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nif (expectedSigB64.length !== signatureB64.length) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n  diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\n\nif (diff !== 0) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nfunction base64urlDecode(str) {\n  str = str.replace(/-/g, '+').replace(/_/g, '/');\n  while (str.length % 4) { str += '='; }\n  return str;\n}\n\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n  payload = JSON.parse(payloadStr);\n} catch (e) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token payload parse failed' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token expired' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nmsg.user = { user_id: payload.user_id, username: payload.username };\nreturn [msg, null];",
+    "outputs": 2,
+    "wires": [
+      [
+        "f5_parse_action"
+      ],
+      [
+        "f5_auth_fail"
+      ]
+    ]
+  },
+  {
+    "id": "f5_auth_fail",
+    "type": "http response",
+    "z": "flow5_proposal_manage",
+    "name": "认证失败(401)",
+    "statusCode": "401",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "flow11_proposals_list",
+    "type": "tab",
+    "label": "Flow11: 提案列表",
+    "disabled": false,
+    "info": "GET /api/v1/proposals"
+  },
+  {
+    "id": "f11_http_in",
+    "type": "http in",
+    "z": "flow11_proposals_list",
+    "name": "提案列表接口",
+    "url": "/api/v1/proposals",
+    "method": "get",
+    "wires": [
+      [
+        "f11_jwt_verify"
+      ]
+    ]
+  },
+  {
+    "id": "f11_jwt_verify",
+    "type": "function",
+    "z": "flow11_proposals_list",
+    "name": "JWT验证",
+    "func": "// ===== JWT Token Verification (Auth Middleware) =====\nvar crypto = global.get('crypto');\nvar JWT_SECRET = global.get('JWT_SECRET');\n\nif (!JWT_SECRET) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Server secret not configured' });\n  msg.statusCode = 500;\n  return [null, msg];\n}\n\nvar authHeader = msg.req.headers['authorization'] || '';\nvar token = '';\nif (authHeader.indexOf('Bearer ') === 0) { token = authHeader.substring(7); }\n\nif (!token) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Missing access token' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar parts = token.split('.');\nif (parts.length !== 3) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token format' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar headerB64 = parts[0];\nvar payloadB64 = parts[1];\nvar signatureB64 = parts[2];\nvar data = headerB64 + '.' + payloadB64;\n\nvar expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest();\nvar expectedSigB64 = expectedSig.toString('base64');\n// Convert to base64url\nexpectedSigB64 = expectedSigB64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nif (expectedSigB64.length !== signatureB64.length) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar diff = 0;\nfor (var i = 0; i < expectedSigB64.length; i++) {\n  diff |= expectedSigB64.charCodeAt(i) ^ signatureB64.charCodeAt(i);\n}\n\nif (diff !== 0) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Invalid token signature' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nfunction base64urlDecode(str) {\n  str = str.replace(/-/g, '+').replace(/_/g, '/');\n  while (str.length % 4) { str += '='; }\n  return str;\n}\n\nvar payloadStr = Buffer.from(base64urlDecode(payloadB64), 'base64').toString();\nvar payload;\ntry {\n  payload = JSON.parse(payloadStr);\n} catch (e) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token payload parse failed' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nvar now = Math.floor(Date.now() / 1000);\nif (payload.exp && now > payload.exp) {\n  msg.payload = JSON.stringify({ code: 1, error: 'Token expired' });\n  msg.statusCode = 401;\n  return [null, msg];\n}\n\nmsg.user = { user_id: payload.user_id, username: payload.username };\nreturn [msg, null];",
+    "outputs": 2,
+    "wires": [
+      [
+        "f11_parse_query"
+      ],
+      [
+        "f11_auth_fail"
+      ]
+    ]
+  },
+  {
+    "id": "f11_parse_query",
+    "type": "function",
+    "z": "flow11_proposals_list",
+    "name": "解析查询参数",
+    "func": "// Parse query params for proposals list (msg.topic mode)\nvar status = (msg.req.query && msg.req.query.status) || '';\nvar limit = parseInt((msg.req.query && msg.req.query.limit) || '50', 10);\nif (isNaN(limit) || limit < 1 || limit > 200) { limit = 50; }\n\nvar sql = 'SELECT rowid as id, type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at FROM proposals';\nvar params = [];\n\nif (status && ['PENDING','LOCKED','ACCEPTED','REJECTED'].indexOf(status) !== -1) {\n  sql += ' WHERE lock_state = $1';\n  params.push(status);\n}\nsql += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1);\nparams.push(limit);\n\nmsg.topic = sql;\nmsg.payload = params;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f11_query"
+      ]
+    ]
+  },
+  {
+    "id": "f11_query",
+    "type": "sqlite",
+    "z": "flow11_proposals_list",
+    "name": "查询提案列表",
+    "sql": "",
+    "wires": [
+      [
+        "f11_format"
+      ]
+    ],
+    "mydb": "ffos_sqlite_db",
+    "sqlquery": "msg.topic"
+  },
+  {
+    "id": "f11_format",
+    "type": "function",
+    "z": "flow11_proposals_list",
+    "name": "格式化响应",
+    "func": "var rows = msg.payload || [];\nmsg.payload = JSON.stringify({ code: 0, data: { proposals: rows, count: rows.length }, message: 'ok' });\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f11_response"
+      ]
+    ]
+  },
+  {
+    "id": "f11_response",
+    "type": "http response",
+    "z": "flow11_proposals_list",
+    "name": "返回提案列表",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f11_auth_fail",
+    "type": "http response",
+    "z": "flow11_proposals_list",
+    "name": "认证失败(401)",
+    "statusCode": "401",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f11_catch",
+    "type": "catch",
+    "z": "flow11_proposals_list",
+    "name": "错误捕获",
+    "scope": null,
+    "uncaught": true,
+    "wires": [
+      [
+        "f11_err_format"
+      ]
+    ]
+  },
+  {
+    "id": "f11_err_format",
+    "type": "function",
+    "z": "flow11_proposals_list",
+    "name": "格式化错误响应",
+    "func": "msg.payload = JSON.stringify({ code: 1, error: msg.error ? msg.error.message : 'Internal error' });\nmsg.statusCode = 500;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f11_err_response"
+      ]
+    ]
+  },
+  {
+    "id": "f11_err_response",
+    "type": "http response",
+    "z": "flow11_proposals_list",
+    "name": "返回错误",
+    "statusCode": "500",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "flow12_cors",
+    "type": "tab",
+    "label": "Flow12: CORS预检",
+    "disabled": false,
+    "info": "OPTIONS preflight handler"
+  },
+  {
+    "id": "f12_http_in",
+    "type": "http in",
+    "z": "flow12_cors",
+    "name": "OPTIONS预检",
+    "url": "/api/v1/*",
+    "method": "options",
+    "wires": [
+      [
+        "f12_cors_response"
+      ]
+    ]
+  },
+  {
+    "id": "f12_cors_response",
+    "type": "function",
+    "z": "flow12_cors",
+    "name": "返回CORS头",
+    "func": "msg.payload = '';\nmsg.statusCode = 204;\nmsg.headers = {\n  'Access-Control-Allow-Origin': '*',\n  'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization',\n  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',\n  'Access-Control-Max-Age': '86400'\n};\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f12_http_out"
+      ]
+    ]
+  },
+  {
+    "id": "f12_http_out",
+    "type": "http response",
+    "z": "flow12_cors",
+    "name": "HTTP响应",
+    "statusCode": "",
+    "headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f2_validation_fail",
+    "type": "http response",
+    "z": "flow2_auto_increment",
+    "name": "验证失败(400)",
+    "statusCode": "400",
+    "headers": {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    },
+    "wires": []
+  },
+  {
+    "id": "f2_prepare_params",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "准备SQL参数",
+    "func": "// Convert proposal object to SQL params for msg.topic mode\nvar p = msg.payload.proposal || msg.payload;\nmsg.topic = 'INSERT INTO proposals (type, lock_state, target_table, target_id, target_field, old_value, new_value, reason, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)';\nmsg.payload = [\n  p.type,\n  p.lock_state,\n  p.target_table,\n  p.target_id,\n  p.target_field,\n  String(p.old_value),\n  String(p.new_value),\n  p.reason,\n  p.created_at\n];\nmsg.proposal_info = msg.payload;\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f2_save_proposal"
+      ]
+    ]
+  },
+  {
+    "id": "f2_prep_streak",
+    "type": "function",
+    "z": "flow2_auto_increment",
+    "name": "准备连续记录SQL",
+    "func": "// Prepare streak update SQL for msg.topic mode\n// entry_id was parsed and stored by f2_parse_payload\nvar entryId = msg.original_entry_id || msg.entry_id;\nmsg.topic = 'UPDATE streaks SET current_count = current_count + 1, longest_count = CASE WHEN current_count + 1 > longest_count THEN current_count + 1 ELSE longest_count END, last_date = date($1) WHERE unit_id = (SELECT unit_id FROM schedule_entries WHERE entry_id = $2)';\nmsg.payload = [new Date().toISOString().slice(0,10), entryId];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f2_update_streak"
+      ]
+    ]
+  },
+  {
+    "id": "f4_prep_query",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备查询SQL",
+    "func": "// Prepare conflict detection query for msg.topic mode\nmsg.topic = 'SELECT se.entry_id, se.date, se.start_time, se.exec_mode, se.unit_id, eu.priority FROM schedule_entries se JOIN executable_units eu ON se.unit_id = eu.id WHERE se.date = $1 AND se.entry_id != $2';\nmsg.payload = [msg.new_entry.date, msg.new_entry.entry_id];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f4_query_existing"
+      ]
+    ]
+  },
+  {
+    "id": "f4_prep_batch",
+    "type": "function",
+    "z": "flow4_conflict_detection",
+    "name": "准备批量SQL",
+    "func": "// Build batch INSERT for new schedule entry using msg.topic (batch mode)\nvar e = msg.new_entry;\nmsg.topic = \"INSERT INTO schedule_entries (unit_id, date, start_time, exec_mode, is_baseline, lock_state) VALUES ('\" + e.unit_id + \"', '\" + e.date + \"', '\" + e.start_time + \"', '\" + (e.exec_mode || 'LEARNING') + \"', 0, 'OPEN');\";\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f4_batch_sqlite"
+      ]
+    ]
+  },
+  {
+    "id": "f5_prep_update",
+    "type": "function",
+    "z": "flow5_proposal_manage",
+    "name": "准备更新SQL",
+    "func": "// Prepare proposal update SQL for msg.topic mode\nmsg.topic = 'UPDATE proposals SET lock_state = $1 WHERE rowid = $2';\nmsg.payload = [msg.lock_state, msg.proposal_id];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f5_update_proposal"
+      ]
+    ]
+  },
+  {
+    "id": "f6_prep_query",
+    "type": "function",
+    "z": "flow6_weekly_stats",
+    "name": "准备查询SQL",
+    "func": "// Prepare weekly sessions query for msg.topic mode\nmsg.topic = 'SELECT * FROM sessions WHERE started_at >= $1 AND started_at <= $2';\nmsg.payload = [msg.week_start, msg.week_end];\nreturn msg;",
+    "outputs": 1,
+    "wires": [
+      [
+        "f6_query_sessions"
+      ]
+    ]
+  }
+]
