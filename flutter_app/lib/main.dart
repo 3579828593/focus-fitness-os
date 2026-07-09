@@ -11,6 +11,7 @@ import 'screens/schedule_screen.dart';
 import 'screens/focus_session_screen.dart';
 import 'screens/workout_session_screen.dart';
 import 'screens/proposal_screen.dart';
+import 'theme/app_theme.dart';
 
 /// 数据库全局 Provider
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -86,21 +87,9 @@ class FocusFitnessApp extends HookConsumerWidget {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: '专注健身OS',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6F8F72),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: true),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6F8F72),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.dark,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
     );
