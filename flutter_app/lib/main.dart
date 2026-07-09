@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'data/database.dart';
 import 'services/app_config.dart';
@@ -25,7 +26,7 @@ final nodeRedApiProvider = Provider<NodeRedApi>((ref) {
   return NodeRedApi(
     baseUrl: const String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'https://focus-fitness-os-api.focus-fitness-os.workers.dev',
+      defaultValue: 'https://focus-fitness-os-api.pages.dev',
     ),
     apiToken: 'dev-token',
   );
@@ -60,6 +61,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('zh_CN', null);
   final config = await AppConfig.load();
   runApp(
     ProviderScope(
