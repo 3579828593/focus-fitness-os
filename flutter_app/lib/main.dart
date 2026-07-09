@@ -18,7 +18,7 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 });
 
 /// Node-RED API 全局 Provider
-/// 生产环境默认使用 Railway 部署的 API
+/// 生产环境通过 GitHub Secret API_BASE_URL 注入 (Cloudflare Tunnel)
 /// 本地开发可通过 --dart-define=API_BASE_URL=http://127.0.0.1:1880 覆盖
 final nodeRedApiProvider = Provider<NodeRedApi>((ref) {
   return NodeRedApi(
