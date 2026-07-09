@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../theme/tokens.dart';
 import '../providers/focus_session_notifier.dart';
 import '../runners/session_state.dart';
 import '../widgets/timer_display.dart';
@@ -66,31 +67,31 @@ class FocusSessionScreen extends HookConsumerWidget {
           children: [
             // 阶段标签
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
               decoration: BoxDecoration(
                 color: isFocus
-                    ? Colors.green.shade100
-                    : Colors.blue.shade100,
-                borderRadius: BorderRadius.circular(20),
+                    ? AppColors.celadon.withValues(alpha: 0.12)
+                    : AppColors.signal.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppRadius.xl),
               ),
               child: Text(
                 isFocus ? '专注中' : '休息中',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: isFocus ? Colors.green : Colors.blue,
+                  color: isFocus ? AppColors.celadon : AppColors.signal,
                 ),
               ),
             ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xl),
 
             // 倒计时圆环
             TimerDisplay(
               totalSeconds: currentSeg.plannedSeconds,
               remainingSeconds: state.remainingSeconds,
-              color: isFocus ? Colors.green : Colors.blue,
+              color: isFocus ? AppColors.celadon : AppColors.signal,
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
 
             // 轮次进度
             Text(
@@ -98,15 +99,15 @@ class FocusSessionScreen extends HookConsumerWidget {
               style: theme.textTheme.bodyLarge,
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
 
             // 进度条
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 48),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
               child: LinearProgressIndicator(value: progress),
             ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xl),
 
             // 控制按钮
             Row(
@@ -145,7 +146,7 @@ class FocusSessionScreen extends HookConsumerWidget {
 
             // TTS 消息日志
             if (state.ttsMessages.isNotEmpty) ...[
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.lg),
               SizedBox(
                 height: 80,
                 child: ListView.builder(

@@ -21,7 +21,7 @@ class AppConfig {
     return AppConfig(
       apiBaseUrl: const String.fromEnvironment(
         'API_BASE_URL',
-        defaultValue: 'https://focus-fitness-os-api.focus-fitness-os.workers.dev',
+        defaultValue: 'https://focus-fitness-os-api.pages.dev',
       ),
       apiToken: 'dev-token',
     );

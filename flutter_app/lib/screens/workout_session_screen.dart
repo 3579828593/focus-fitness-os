@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../theme/tokens.dart';
 import '../providers/workout_session_notifier.dart';
 import '../runners/session_state.dart';
 import '../widgets/timer_display.dart';
@@ -103,13 +104,13 @@ class WorkoutSessionScreen extends HookConsumerWidget {
   ) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // 动作名称
             Text(exercise.name, style: theme.textTheme.headlineSmall),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               '第 ${runner.currentSetInExercise} / ${exercise.plannedSets} 组',
               style: theme.textTheme.titleMedium?.copyWith(
@@ -117,7 +118,7 @@ class WorkoutSessionScreen extends HookConsumerWidget {
               ),
             ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xl),
 
             // 次数录入
             TextField(
@@ -130,7 +131,7 @@ class WorkoutSessionScreen extends HookConsumerWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
 
             // 重量录入
             TextField(
@@ -143,7 +144,7 @@ class WorkoutSessionScreen extends HookConsumerWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
 
             // RPE 滑块 (从 notifier state 读取)
             Row(
@@ -163,7 +164,7 @@ class WorkoutSessionScreen extends HookConsumerWidget {
               ],
             ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xl),
 
             FilledButton.icon(
               onPressed: () {
@@ -193,13 +194,13 @@ class WorkoutSessionScreen extends HookConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text('休息中', style: theme.textTheme.titleLarge),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.lg),
           TimerDisplay(
             totalSeconds: currentSeg.plannedSeconds,
             remainingSeconds: remainingSeconds,
-            color: Colors.red,
+            color: AppColors.danger,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.lg),
           if (remainingSeconds <= 0)
             FilledButton.icon(
               onPressed: () {
@@ -230,26 +231,26 @@ class WorkoutSessionScreen extends HookConsumerWidget {
     final next = runner.currentExercise;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.fitness_center, size: 48),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Text('下一个动作', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               next?.name ?? '未知',
               style: theme.textTheme.headlineSmall,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               '${next?.plannedSets ?? 0}组 × ${next?.plannedReps ?? 0}次',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.colorScheme.primary,
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton.icon(
               onPressed: () {
                 notifier.confirmNextExercise();
@@ -284,7 +285,7 @@ class WorkoutSessionScreen extends HookConsumerWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -294,20 +295,20 @@ class WorkoutSessionScreen extends HookConsumerWidget {
                   : Icons.stop_circle,
               size: 64,
               color: runner.state == SessionState.completed
-                  ? Colors.amber
-                  : Colors.grey,
+                  ? AppColors.brass
+                  : AppColors.inkSoftDark,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Text(
               runner.state == SessionState.completed ? '训练完成！' : '训练结束',
               style: theme.textTheme.headlineMedium,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.lg),
             _SummaryRow(label: '完成组数', value: '$totalSets 组'),
             _SummaryRow(
                 label: '总训练量', value: '${totalVolume.toStringAsFixed(1)} kg'),
             _SummaryRow(label: '完成率', value: '${(ratio * 100).toInt()}%'),
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: () => context.pop(),
               child: const Text('返回'),
@@ -328,7 +329,7 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [

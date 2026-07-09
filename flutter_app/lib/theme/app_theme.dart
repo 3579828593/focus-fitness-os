@@ -42,7 +42,7 @@ class AppTheme {
       // 文字主题
       textTheme: _buildTextTheme(colorScheme),
       // AppBar
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         centerTitle: true,
         backgroundColor: AppColors.bgPanel,
         foregroundColor: AppColors.inkDark,
@@ -73,7 +73,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-          textStyle: TextStyle(
+          textStyle: const TextStyle(
             fontFamily: AppFonts.sansSerif,
             fontSize: AppFonts.labelLarge,
             fontWeight: FontWeight.w600,
@@ -87,7 +87,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          side: BorderSide(color: AppColors.borderDark),
+          side: const BorderSide(color: AppColors.borderDark),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         ),
       ),
@@ -106,24 +106,24 @@ class AppTheme {
         fillColor: AppColors.bgElevated,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.borderDark),
+          borderSide: const BorderSide(color: AppColors.borderDark),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.borderDark),
+          borderSide: const BorderSide(color: AppColors.borderDark),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.accent, width: 2),
+          borderSide: const BorderSide(color: AppColors.accent, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.md),
-        labelStyle: TextStyle(color: AppColors.inkSoftDark, fontFamily: AppFonts.sansSerif),
+        labelStyle: const TextStyle(color: AppColors.inkSoftDark, fontFamily: AppFonts.sansSerif),
       ),
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.bgElevated,
         selectedColor: AppColors.accent.withValues(alpha: 0.15),
-        labelStyle: TextStyle(
+        labelStyle: const TextStyle(
           fontFamily: AppFonts.sansSerif,
           fontSize: AppFonts.labelMedium,
           color: AppColors.inkDark,
@@ -131,7 +131,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
-        side: BorderSide(color: AppColors.borderDark),
+        side: const BorderSide(color: AppColors.borderDark),
       ),
       // ListTile
       listTileTheme: ListTileThemeData(
@@ -141,7 +141,7 @@ class AppTheme {
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
       ),
       // Divider
-      dividerTheme: DividerThemeData(
+      dividerTheme: const DividerThemeData(
         color: AppColors.borderDark,
         thickness: 1,
         space: 1,
@@ -160,11 +160,11 @@ class AppTheme {
         backgroundColor: AppColors.bgPanel,
         indicatorColor: AppColors.accent.withValues(alpha: 0.15),
         labelTextStyle: WidgetStateProperty.all(
-          TextStyle(fontFamily: AppFonts.sansSerif, fontSize: AppFonts.labelSmall),
+          const TextStyle(fontFamily: AppFonts.sansSerif, fontSize: AppFonts.labelSmall),
         ),
       ),
       // ProgressIndicator
-      progressIndicatorTheme: ProgressIndicatorThemeData(
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.accent,
         linearTrackColor: AppColors.bgElevated,
         linearMinHeight: 4,
@@ -180,7 +180,7 @@ class AppTheme {
       // SnackBar
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.bgElevated,
-        contentTextStyle: TextStyle(
+        contentTextStyle: const TextStyle(
           fontFamily: AppFonts.sansSerif,
           color: AppColors.inkDark,
         ),
@@ -225,7 +225,7 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.bgLight,
       canvasColor: AppColors.bgLightPanel,
       textTheme: _buildTextTheme(colorScheme),
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         centerTitle: true,
         backgroundColor: AppColors.bgLightPanel,
         foregroundColor: AppColors.inkLight,
@@ -243,7 +243,7 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          side: BorderSide(color: AppColors.borderLight),
+          side: const BorderSide(color: AppColors.borderLight),
         ),
         margin: EdgeInsets.zero,
       ),
@@ -263,7 +263,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          side: BorderSide(color: AppColors.borderLight),
+          side: const BorderSide(color: AppColors.borderLight),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         ),
       ),
@@ -272,26 +272,26 @@ class AppTheme {
         fillColor: AppColors.bgLightCard,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.borderLight),
+          borderSide: const BorderSide(color: AppColors.borderLight),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.borderLight),
+          borderSide: const BorderSide(color: AppColors.borderLight),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.accent, width: 2),
+          borderSide: const BorderSide(color: AppColors.accent, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.md),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.bgLightCard,
         selectedColor: AppColors.accent.withValues(alpha: 0.12),
-        labelStyle: TextStyle(fontFamily: AppFonts.sansSerif, fontSize: AppFonts.labelMedium),
+        labelStyle: const TextStyle(fontFamily: AppFonts.sansSerif, fontSize: AppFonts.labelMedium),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
-        side: BorderSide(color: AppColors.borderLight),
+        side: const BorderSide(color: AppColors.borderLight),
       ),
-      dividerTheme: DividerThemeData(color: AppColors.borderLight, thickness: 1, space: 1),
+      dividerTheme: const DividerThemeData(color: AppColors.borderLight, thickness: 1, space: 1),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: AppColors.accent,
         foregroundColor: Colors.white,
@@ -301,7 +301,7 @@ class AppTheme {
         backgroundColor: AppColors.bgLightPanel,
         indicatorColor: AppColors.accent.withValues(alpha: 0.12),
       ),
-      progressIndicatorTheme: ProgressIndicatorThemeData(
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.accent,
         linearTrackColor: AppColors.bgLightCard,
         linearMinHeight: 4,

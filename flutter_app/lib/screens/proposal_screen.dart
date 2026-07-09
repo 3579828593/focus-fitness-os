@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../main.dart';
 import '../data/daos/daos.dart';
+import '../theme/tokens.dart';
 
 /// ============================================================
 /// ProposalScreen: LOCKED 提案确认页 (HITL 人机回环)
@@ -81,7 +82,7 @@ class ProposalScreen extends HookConsumerWidget {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('提案 #$proposalId 已接受'),
-                          backgroundColor: Colors.green,
+                          backgroundColor: AppColors.celadon,
                         ),
                       );
                     }
@@ -91,7 +92,7 @@ class ProposalScreen extends HookConsumerWidget {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('操作失败: $e'),
-                          backgroundColor: Colors.red,
+                          backgroundColor: AppColors.danger,
                         ),
                       );
                     }
@@ -117,7 +118,7 @@ class ProposalScreen extends HookConsumerWidget {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('提案 #$proposalId 已拒绝'),
-                          backgroundColor: Colors.orange,
+                          backgroundColor: AppColors.accent,
                         ),
                       );
                     }
@@ -127,7 +128,7 @@ class ProposalScreen extends HookConsumerWidget {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('操作失败: $e'),
-                          backgroundColor: Colors.red,
+                          backgroundColor: AppColors.danger,
                         ),
                       );
                     }
@@ -181,15 +182,15 @@ class _ProposalCard extends StatelessWidget {
     final type = proposal['type'] as String? ?? '';
     switch (type) {
       case 'WEIGHT_INCREMENT':
-        return Colors.green;
+        return AppColors.celadon;
       case 'WEIGHT_DECREMENT':
-        return Colors.orange;
+        return AppColors.accent;
       case 'SCHEDULE_CONFLICT':
-        return Colors.red;
+        return AppColors.danger;
       case 'DAILY_REMINDER':
-        return Colors.blue;
+        return AppColors.signal;
       default:
-        return Colors.purple;
+        return AppColors.accent;
     }
   }
 
@@ -204,9 +205,9 @@ class _ProposalCard extends StatelessWidget {
     final payload = proposal['payload'] as Map<String, dynamic>?;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -214,10 +215,10 @@ class _ProposalCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: BoxDecoration(
-                    color: _typeColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
+                    color: _typeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: Icon(_typeIcon, color: _typeColor, size: 20),
                 ),
@@ -242,21 +243,21 @@ class _ProposalCard extends StatelessWidget {
                 // LOCKED 徽章
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.grey.shade400),
+                    color: AppColors.bgElevated,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(color: AppColors.borderDark),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.lock, size: 12, color: Colors.grey.shade600),
+                      Icon(Icons.lock, size: 12, color: AppColors.inkSoftDark),
                       const SizedBox(width: 4),
                       Text(
                         '待确认',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.grey.shade700,
+                          color: AppColors.inkSoftDark,
                         ),
                       ),
                     ],
@@ -272,13 +273,13 @@ class _ProposalCard extends StatelessWidget {
 
             // 载荷详情 (如果有)
             if (payload != null && payload.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.sm),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(AppSpacing.sm),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHighest
-                      .withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(8),
+                      .withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -310,7 +311,7 @@ class _ProposalCard extends StatelessWidget {
             ],
 
             if (createdAt.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 '生成时间: $createdAt',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -319,7 +320,7 @@ class _ProposalCard extends StatelessWidget {
               ),
             ],
 
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
 
             // 操作按钮
             Row(
@@ -330,7 +331,7 @@ class _ProposalCard extends StatelessWidget {
                   icon: const Icon(Icons.close, size: 18),
                   label: const Text('拒绝'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade700,
+                    foregroundColor: AppColors.danger,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -365,16 +366,16 @@ class _EmptyView extends StatelessWidget {
           Icon(
             Icons.check_circle_outline,
             size: 64,
-            color: theme.colorScheme.primary.withOpacity(0.5),
+            color: theme.colorScheme.primary.withValues(alpha: 0.5),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           Text(
             '没有待确认的提案',
             style: theme.textTheme.titleMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             'Node-RED 规则引擎当前没有生成需要人工确认的操作',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -401,7 +402,7 @@ class _OfflineView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -411,7 +412,7 @@ class _OfflineView extends StatelessWidget {
                 Icon(
                   Icons.cloud_off,
                   size: 64,
-                  color: Colors.orange.withOpacity(0.5),
+                  color: AppColors.accent.withValues(alpha: 0.5),
                 ),
                 Positioned(
                   bottom: 0,
@@ -425,18 +426,18 @@ class _OfflineView extends StatelessWidget {
                     child: Icon(
                       Icons.wifi_off,
                       size: 20,
-                      color: Colors.orange.shade700,
+                      color: AppColors.accent,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.lg),
             Text(
               'Node-RED 离线',
               style: theme.textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               '无法连接到规则引擎服务\n提案确认功能暂不可用\n\n本地降级规则仍在运行:\n'
               '• 训练完成 → 本地渐进超负荷 (+2.5kg / -2.5kg)\n'
@@ -447,13 +448,13 @@ class _OfflineView extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.lg),
             FilledButton.tonalIcon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
               label: const Text('重试连接'),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             TextButton(
               onPressed: () => context.pop(),
               child: const Text('返回首页'),

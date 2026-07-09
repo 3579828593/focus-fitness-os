@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../main.dart';
+import '../theme/tokens.dart';
 import '../data/daos/daos.dart';
 import '../data/tables.dart';
 import '../data/database.dart';
@@ -50,12 +51,12 @@ class HomeScreen extends HookConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.md),
         children: [
           // 日期卡片
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -63,7 +64,7 @@ class HomeScreen extends HookConsumerWidget {
                     DateFormat('MM月dd日 EEEE', 'zh_CN').format(DateTime.now()),
                     style: theme.textTheme.headlineSmall,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                   scheduleAsync.when(
                     data: (entries) => Text(
                       '今日 ${entries.length} 项安排',
@@ -79,7 +80,7 @@ class HomeScreen extends HookConsumerWidget {
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
 
           // 快速导航
           Row(
@@ -88,27 +89,27 @@ class HomeScreen extends HookConsumerWidget {
                 child: _ActionCard(
                   icon: Icons.calendar_today,
                   label: '今日日程',
-                  color: Colors.blue.shade100,
+                  color: AppColors.signal.withValues(alpha: 0.12),
                   onTap: () => context.push('/schedule/$today'),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _ActionCard(
                   icon: Icons.lightbulb_outline,
                   label: '待确认提案',
-                  color: Colors.amber.shade100,
+                  color: AppColors.brass.withValues(alpha: 0.12),
                   onTap: () => context.push('/proposals'),
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.lg),
 
           // 目标进度
           Text('目标进度', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           goalsAsync.when(
             data: (goals) => goals.isEmpty
                 ? const Card(
@@ -130,7 +131,7 @@ class HomeScreen extends HookConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               LinearProgressIndicator(value: pct),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: AppSpacing.xs),
                               Text(
                                 '${g.currentValue.toStringAsFixed(0)} / ${g.targetValue.toStringAsFixed(0)} ${g.unit}',
                                 style: theme.textTheme.bodySmall,
@@ -174,13 +175,13 @@ class _ActionCard extends StatelessWidget {
       color: color,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg, horizontal: AppSpacing.md),
           child: Column(
             children: [
               Icon(icon, size: 32),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               Text(label),
             ],
           ),

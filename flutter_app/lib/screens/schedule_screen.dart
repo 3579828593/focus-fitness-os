@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../main.dart';
+import '../theme/tokens.dart';
 import '../data/database.dart';
 import '../data/daos/daos.dart';
 import '../data/tables.dart';
@@ -44,10 +45,10 @@ class ScheduleScreen extends HookConsumerWidget {
                 children: [
                   Icon(Icons.event_available,
                       size: 64, color: theme.colorScheme.outline),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.md),
                   Text('今日暂无安排',
                       style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                   FilledButton.icon(
                     onPressed: () => _showAddSheet(context, ref),
                     icon: const Icon(Icons.add),
@@ -58,7 +59,7 @@ class ScheduleScreen extends HookConsumerWidget {
             );
           }
           return ListView.builder(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             itemCount: entries.length,
             itemBuilder: (context, index) {
               final entry = entries[index] as ScheduleEntry;
@@ -67,11 +68,11 @@ class ScheduleScreen extends HookConsumerWidget {
                 child: ListTile(
                   leading: CircleAvatar(
                     backgroundColor: isWorkout
-                        ? Colors.orange.shade100
-                        : Colors.green.shade100,
+                        ? AppColors.accent.withValues(alpha: 0.12)
+                        : AppColors.celadon.withValues(alpha: 0.12),
                     child: Icon(
                       isWorkout ? Icons.fitness_center : Icons.menu_book,
-                      color: isWorkout ? Colors.orange : Colors.green,
+                      color: isWorkout ? AppColors.accent : AppColors.celadon,
                     ),
                   ),
                   title: Text(entry.startTime),
@@ -79,7 +80,7 @@ class ScheduleScreen extends HookConsumerWidget {
                   trailing: entry.lockState == 'LOCKED'
                       ? Chip(
                           label: const Text('锁定'),
-                          backgroundColor: Colors.amber.shade100,
+                          backgroundColor: AppColors.brass.withValues(alpha: 0.12),
                         )
                       : const Icon(Icons.chevron_right),
                   onTap: () {
@@ -111,7 +112,7 @@ class ScheduleScreen extends HookConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.menu_book, color: Colors.green),
+              leading: const Icon(Icons.menu_book, color: AppColors.celadon),
               title: const Text('添加学习任务'),
               onTap: () async {
                 final db = ref.read(databaseProvider);
@@ -135,7 +136,7 @@ class ScheduleScreen extends HookConsumerWidget {
             ),
             ListTile(
               leading:
-                  const Icon(Icons.fitness_center, color: Colors.orange),
+                  const Icon(Icons.fitness_center, color: AppColors.accent),
               title: const Text('添加健身计划'),
               onTap: () async {
                 final db = ref.read(databaseProvider);
