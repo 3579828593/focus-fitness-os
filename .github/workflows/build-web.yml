@@ -55,11 +55,8 @@ jobs:
       - name: Build Web App
         run: |
           flutter build web --release \
-            --dart-define=API_BASE_URL=$API_BASE_URL \
             --base-href /focus-fitness-os/ \
             --no-wasm-dry-run
-        env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL || 'https://focus-fitness-os-backend-production.up.railway.app' }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

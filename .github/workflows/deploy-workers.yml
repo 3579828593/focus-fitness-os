@@ -1,0 +1,31 @@
+name: Deploy Workers API
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'workers_backend/**'
+      - '.github/workflows/deploy-workers.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: cd workers_backend && npm install
+      - name: Run tests
+        run: cd workers_backend && npm test
+      - name: Apply D1 migrations
+        run: cd workers_backend && npx wrangler d1 migrations apply focus-fitness-os-db
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Deploy to Cloudflare Workers
+        run: cd workers_backend && npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}

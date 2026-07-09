@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'data/database.dart';
+import 'services/app_config.dart';
 import 'services/nodered_api.dart';
 import 'screens/home_screen.dart';
 import 'screens/schedule_screen.dart';
@@ -18,13 +19,13 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 });
 
 /// Node-RED API 全局 Provider
-/// 生产环境通过 GitHub Secret API_BASE_URL 注入 (Cloudflare Tunnel)
-/// 本地开发可通过 --dart-define=API_BASE_URL=http://127.0.0.1:1880 覆盖
+/// 运行时通过 main() 中加载的 AppConfig 以 ProviderScope override 注入
+/// 此处的默认值仅作为未 override 时的回退 (如直接测试场景)
 final nodeRedApiProvider = Provider<NodeRedApi>((ref) {
   return NodeRedApi(
     baseUrl: const String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'https://focus-fitness-os-backend-production.up.railway.app',
+      defaultValue: 'https://focus-fitness-os-api.focus-fitness-os.workers.dev',
     ),
     apiToken: 'dev-token',
   );
@@ -57,8 +58,22 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-void main() {
-  runApp(const ProviderScope(child: FocusFitnessApp()));
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final config = await AppConfig.load();
+  runApp(
+    ProviderScope(
+      overrides: [
+        nodeRedApiProvider.overrideWithValue(
+          NodeRedApi(
+            baseUrl: config.apiBaseUrl,
+            apiToken: config.apiToken,
+          ),
+        ),
+      ],
+      child: const FocusFitnessApp(),
+    ),
+  );
 }
 
 class FocusFitnessApp extends HookConsumerWidget {
