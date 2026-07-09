@@ -43,3 +43,11 @@ nodered_backend/data/
 # Logs
 *.log
 npm-debug.log*
+
+# Node-RED runtime files (generated, not source)
+nodered_backend/.config.*.json
+nodered_backend/nodered.log
+nodered_backend/nodered.err
+nodered_backend/tunnel.log
+nodered_backend/tunnel.err
+
