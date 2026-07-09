@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOLO-OS PRAR 全流程架构设计 - Focus Fitness OS</title>
+<style>
+/* ========== Design System ========== */
+:root {
+  --seed: #6F8F72;
+  --seed-dark: #4A6850;
+  --seed-darker: #34503A;
+  --seed-light: #8FA892;
+  --seed-lighter: #B5C9B7;
+  --seed-palest: #E8F0E9;
+  --accent: #4A7C59;
+  --accent-bright: #5BA371;
+  --bg: #F5F8F5;
+  --bg-alt: #EDF3EE;
+  --card: #FFFFFF;
+  --text: #2C3E2D;
+  --text-muted: #6B8068;
+  --text-light: #8FA890;
+  --border: #D4E0D5;
+  --border-light: #E8F0E9;
+  --shadow: 0 2px 8px rgba(74, 104, 80, 0.08);
+  --shadow-md: 0 4px 16px rgba(74, 104, 80, 0.12);
+  --shadow-lg: 0 8px 32px rgba(74, 104, 80, 0.16);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 20px;
+  --max-width: 1100px;
+  --sidebar-width: 280px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New", monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ========== Layout ========== */
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ========== Sidebar / TOC ========== */
+.sidebar {
+  width: var(--sidebar-width);
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 28px 0;
+  z-index: 100;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+  padding: 0 24px 20px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 16px;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.logo-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--seed), var(--seed-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.logo-icon::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  border-top-color: transparent;
+  border-right-color: transparent;
+  transform: rotate(-45deg);
+}
+
+.logo-text {
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--seed-darker);
+  letter-spacing: -0.3px;
+}
+
+.sidebar-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 24px;
+  line-height: 1.5;
+}
+
+.toc {
+  list-style: none;
+  padding: 0 12px;
+}
+
+.toc-item {
+  margin-bottom: 2px;
+}
+
+.toc-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.toc-link:hover {
+  background: var(--seed-palest);
+  color: var(--seed-dark);
+}
+
+.toc-link.active {
+  background: var(--seed-palest);
+  color: var(--seed-dark);
+  border-left-color: var(--seed);
+  font-weight: 600;
+}
+
+.toc-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-alt);
+  color: var(--seed-dark);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.toc-link.active .toc-num {
+  background: var(--seed);
+  color: #fff;
+}
+
+/* ========== Main Content ========== */
+.main {
+  margin-left: var(--sidebar-width);
+  flex: 1;
+  padding: 0;
+  min-width: 0;
+}
+
+.content {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 40px 48px 80px;
+}
+
+/* ========== Hero ========== */
+.hero {
+  background: linear-gradient(135deg, var(--seed-dark) 0%, var(--seed-darker) 100%);
+  color: #fff;
+  padding: 56px 48px;
+  margin: -40px -48px 40px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  backdrop-filter: blur(10px);
+}
+
+.hero-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  box-shadow: 0 0 8px var(--accent-bright);
+}
+
+.hero h1 {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.hero p {
+  font-size: 16px;
+  opacity: 0.9;
+  max-width: 600px;
+  position: relative;
+}
+
+.hero-meta {
+  display: flex;
+  gap: 24px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.hero-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hero-meta-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.65;
+}
+
+.hero-meta-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ========== Sections ========== */
+.section {
+  margin-bottom: 56px;
+  scroll-margin-top: 80px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--border-light);
+}
+
+.section-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--seed), var(--seed-dark));
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  flex-shrink: 0;
+  box-shadow: var(--shadow);
+}
+
+.section-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--seed-darker);
+  letter-spacing: -0.3px;
+}
+
+.section-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--seed-darker);
+  margin: 28px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h3::before {
+  content: "";
+  width: 4px;
+  height: 20px;
+  background: var(--seed);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--seed-dark);
+  margin: 20px 0 10px;
+}
+
+p {
+  margin-bottom: 14px;
+  color: var(--text);
+}
+
+strong {
+  color: var(--seed-darker);
+  font-weight: 700;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--seed-palest);
+  color: var(--seed-darker);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+pre {
+  background: #1e2b20;
+  color: #d4e8d6;
+  padding: 18px 20px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 14px 0;
+  border: 1px solid #2d3f30;
+}
+
+pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
+ul, ol {
+  margin: 10px 0 14px 20px;
+}
+
+li {
+  margin-bottom: 6px;
+  line-height: 1.7;
+}
+
+/* ========== Cards ========== */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin: 16px 0;
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.info-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  border-top: 3px solid var(--seed);
+  transition: all 0.2s;
+}
+
+.info-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.info-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--seed-palest);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.info-card h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.info-card p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ========== Badges ========== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.badge-green { background: var(--seed-palest); color: var(--seed-dark); border: 1px solid var(--seed-lighter); }
+.badge-blue { background: #E8F0FE; color: #1A56DB; border: 1px solid #B4CEFB; }
+.badge-orange { background: #FFF3E0; color: #B26500; border: 1px solid #FFD9A6; }
+.badge-purple { background: #F3E8FF; color: #6B21A8; border: 1px solid #D8B4FE; }
+.badge-red { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+.badge-gray { background: #F3F4F6; color: #4B5563; border: 1px solid #E5E7EB; }
+
+.badge-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* ========== Tables ========== */
+.table-wrap {
+  overflow-x: auto;
+  margin: 16px 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+th {
+  background: var(--seed-palest);
+  color: var(--seed-darker);
+  font-weight: 700;
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 2px solid var(--seed-lighter);
+  white-space: nowrap;
+}
+
+td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: top;
+}
+
+tr:last-child td { border-bottom: none; }
+
+tr:hover td { background: var(--bg-alt); }
+
+/* ========== PRAR Diagram ========== */
+.prar-cycle {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 0;
+  margin: 30px 0;
+  flex-wrap: wrap;
+}
+
+.prar-node {
+  flex: 1;
+  min-width: 140px;
+  max-width: 200px;
+  text-align: center;
+  position: relative;
+  padding: 20px 12px;
+}
+
+.prar-node-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 28px;
+  color: #fff;
+  position: relative;
+  box-shadow: var(--shadow-md);
+}
+
+.prar-node:nth-child(1) .prar-node-circle { background: linear-gradient(135deg, #5BA371, #3D8B57); }
+.prar-node:nth-child(2) .prar-node-circle { background: linear-gradient(135deg, #4A90D9, #2E6FB5); }
+.prar-node:nth-child(3) .prar-node-circle { background: linear-gradient(135deg, #D9964A, #B5732E); }
+.prar-node:nth-child(4) .prar-node-circle { background: linear-gradient(135deg, #9B6BD9, #7344B5); }
+
+.prar-node-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--seed-darker);
+  margin-bottom: 4px;
+}
+
+.prar-node-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.prar-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--seed-light);
+  font-size: 24px;
+  padding: 0 4px;
+}
+
+.prar-loop {
+  text-align: center;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--seed);
+  font-weight: 600;
+}
+
+/* ========== Architecture Diagram ========== */
+.arch-diagram {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  margin: 20px 0;
+  box-shadow: var(--shadow);
+}
+
+.arch-layer {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.arch-box {
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 120px;
+  border: 2px solid;
+}
+
+.arch-box .arch-sub {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+.arch-client { background: #E8F5E9; border-color: #66BB6A; color: #2E7D32; }
+.arch-backend { background: #E3F2FD; border-color: #42A5F5; color: #1565C0; }
+.arch-infra { background: #FFF3E0; border-color: #FFA726; color: #E65100; }
+.arch-db { background: #F3E5F5; border-color: #AB47BC; color: #6A1B9A; }
+
+.arch-connector {
+  text-align: center;
+  color: var(--seed-light);
+  font-size: 20px;
+  margin: 2px 0;
+  line-height: 1;
+}
+
+/* ========== Timeline ========== */
+.timeline {
+  position: relative;
+  padding-left: 32px;
+  margin: 20px 0;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--seed), var(--seed-lighter));
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -32px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 3px solid var(--seed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--seed-dark);
+  z-index: 1;
+}
+
+.timeline-item.current .timeline-dot {
+  background: var(--seed);
+  color: #fff;
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 0 4px var(--seed-palest);
+}
+
+.timeline-content {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+
+.timeline-item.current .timeline-content {
+  border-color: var(--seed);
+  border-left: 4px solid var(--seed);
+}
+
+.timeline-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--seed-darker);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeline-body {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ========== CI/CD Pipeline ========== */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.pipeline-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.pipeline-trigger {
+  width: 160px;
+  padding: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pipeline-trigger.web { background: #E8F5E9; color: #2E7D32; }
+.pipeline-trigger.apk { background: #E3F2FD; color: #1565C0; }
+.pipeline-trigger.ci { background: #FFF3E0; color: #E65100; }
+.pipeline-trigger.docker { background: #F3E5F5; color: #6A1B9A; }
+.pipeline-trigger.pkg { background: #FCE4EC; color: #AD1457; }
+
+.pipeline-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--border);
+  font-size: 18px;
+}
+
+.pipeline-action {
+  flex: 1;
+  padding: 16px;
+  font-size: 13px;
+}
+
+.pipeline-action strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.pipeline-action span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pipeline-output {
+  width: 140px;
+  padding: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  background: var(--bg-alt);
+}
+
+/* ========== Callout ========== */
+.callout {
+  border-left: 4px solid;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 14px 18px;
+  margin: 16px 0;
+  font-size: 13.5px;
+}
+
+.callout-info {
+  background: #E8F5E9;
+  border-color: #66BB6A;
+}
+
+.callout-warn {
+  background: #FFF8E1;
+  border-color: #FFC107;
+}
+
+.callout-danger {
+  background: #FFEBEE;
+  border-color: #EF5350;
+}
+
+.callout-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ========== Lesson Cards ========== */
+.lesson-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.lesson-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  border-left: 4px solid var(--accent-bright);
+  box-shadow: var(--shadow);
+}
+
+.lesson-card .badge-row {
+  margin-bottom: 8px;
+}
+
+.lesson-card h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.lesson-card p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ========== Roadmap ========== */
+.roadmap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.roadmap-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.roadmap-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+}
+
+.roadmap-card.immediate::before { background: #66BB6A; }
+.roadmap-card.short::before { background: #42A5F5; }
+.roadmap-card.medium::before { background: #FFA726; }
+.roadmap-card.long::before { background: #AB47BC; }
+
+.roadmap-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.roadmap-card.immediate .roadmap-label { color: #2E7D32; }
+.roadmap-card.short .roadmap-label { color: #1565C0; }
+.roadmap-card.medium .roadmap-label { color: #E65100; }
+.roadmap-card.long .roadmap-label { color: #6A1B9A; }
+
+.roadmap-card h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.roadmap-card ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.roadmap-card li {
+  margin-bottom: 4px;
+}
+
+/* ========== DAG Diagram ========== */
+.dag-container {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  margin: 20px 0;
+  box-shadow: var(--shadow);
+}
+
+.dag-nodes {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.dag-node {
+  border: 2px solid var(--seed);
+  background: var(--seed-palest);
+  color: var(--seed-darker);
+  border-radius: var(--radius-sm);
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  position: relative;
+  min-width: 200px;
+}
+
+.dag-node .dag-phase {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.6;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.dag-connector-down {
+  width: 2px;
+  height: 24px;
+  background: var(--seed-light);
+  position: relative;
+}
+
+.dag-connector-down::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 8px solid var(--seed-light);
+}
+
+.dag-branch {
+  display: flex;
+  gap: 40px;
+  position: relative;
+}
+
+.dag-branch::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  background: var(--seed-light);
+}
+
+.dag-branch .dag-node {
+  position: relative;
+}
+
+.dag-branch .dag-node::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  width: 2px;
+  height: 12px;
+  background: var(--seed-light);
+}
+
+/* ========== Footer ========== */
+.footer {
+  text-align: center;
+  padding: 40px 0 0;
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.footer-seed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.footer-seed::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--seed);
+}
+
+/* ========== Mobile ========== */
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 200;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--seed-dark);
+  border: none;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: var(--shadow-md);
+}
+
+.mobile-toggle span {
+  width: 20px;
+  height: 2px;
+  background: #fff;
+  border-radius: 2px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .mobile-toggle { display: flex; }
+  .content { padding: 20px 20px 60px; }
+  .hero { padding: 36px 20px; margin: -20px -20px 30px; }
+  .hero h1 { font-size: 24px; }
+  .prar-node { min-width: 45%; }
+  .prar-arrow { display: none; }
+  .pipeline-trigger, .pipeline-output { width: 100px; }
+  .pipeline-row { flex-direction: column; }
+  .pipeline-arrow { transform: rotate(90deg); padding: 4px 0; }
+}
+
+@media (max-width: 600px) {
+  .section-title { font-size: 20px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .lesson-grid { grid-template-columns: 1fr; }
+  .roadmap { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<button class="mobile-toggle" id="mobileToggle" aria-label="Toggle navigation">
+  <span></span><span></span><span></span>
+</button>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="logo-icon"></div>
+        <span class="logo-text">SOLO-OS</span>
+      </div>
+    </div>
+    <p class="sidebar-subtitle">Focus Fitness OS<br>全流程架构设计文档</p>
+    <ul class="toc" style="margin-top:16px;">
+      <li class="toc-item"><a class="toc-link" href="#sec1"><span class="toc-num">01</span>PRAR 工作流总览</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec2"><span class="toc-num">02</span>系统架构</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec3"><span class="toc-num">03</span>跨平台策略</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec4"><span class="toc-num">04</span>CI/CD 流水线</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec5"><span class="toc-num">05</span>部署架构</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec6"><span class="toc-num">06</span>可复用技能注册表</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec7"><span class="toc-num">07</span>PRAR 循环历史</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec8"><span class="toc-num">08</span>关键教训</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec9"><span class="toc-num">09</span>未来路线图</a></li>
+      <li class="toc-item"><a class="toc-link" href="#sec10"><span class="toc-num">10</span>SOLO-OS DAG 规范</a></li>
+    </ul>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="content">
+
+      <!-- Hero -->
+      <div class="hero">
+        <div class="hero-badge">SOLO-OS PRAR Orchestration</div>
+        <h1>Focus Fitness OS 全流程架构设计</h1>
+        <p>从认知循环到跨平台部署的完整 SOLO-OS 工作流编排文档，涵盖 PRAR 认知周期、双系统架构、跨平台策略、CI/CD 流水线、永久部署方案及可复用技能体系。</p>
+        <div class="hero-meta">
+          <div class="hero-meta-item">
+            <span class="hero-meta-label">Project</span>
+            <span class="hero-meta-value">Focus Fitness OS</span>
+          </div>
+          <div class="hero-meta-item">
+            <span class="hero-meta-label">PRAR Cycles</span>
+            <span class="hero-meta-value">5 Cycles</span>
+          </div>
+          <div class="hero-meta-item">
+            <span class="hero-meta-label">Skills Created</span>
+            <span class="hero-meta-value">4 Reusable</span>
+          </div>
+          <div class="hero-meta-item">
+            <span class="hero-meta-label">Platforms</span>
+            <span class="hero-meta-value">Android + Web</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 1: PRAR Overview -->
+      <section class="section" id="sec1">
+        <div class="section-header">
+          <span class="section-num">1</span>
+          <div>
+            <div class="section-title">SOLO-OS PRAR 工作流总览</div>
+            <div class="section-subtitle">Perceive - Reason - Act - Reflect 认知循环</div>
+          </div>
+        </div>
+
+        <p>SOLO-OS 采用 <strong>PRAR 认知循环</strong>作为核心工作流编排模型。每个 PRAR 周期代表一次完整的认知-行动闭环，Agent 在每个阶段执行特定职能，最终将经验提炼为可复用技能。</p>
+
+        <!-- PRAR Flow Diagram -->
+        <div class="card">
+          <div class="prar-cycle">
+            <div class="prar-node">
+              <div class="prar-node-circle">P</div>
+              <div class="prar-node-title">Perceive</div>
+              <div class="prar-node-desc">感知当前状态<br>识别问题与环境</div>
+            </div>
+            <div class="prar-arrow">&rarr;</div>
+            <div class="prar-node">
+              <div class="prar-node-circle">R</div>
+              <div class="prar-node-title">Reason</div>
+              <div class="prar-node-desc">推理分析<br>设计方案与策略</div>
+            </div>
+            <div class="prar-arrow">&rarr;</div>
+            <div class="prar-node">
+              <div class="prar-node-circle">A</div>
+              <div class="prar-node-title">Act</div>
+              <div class="prar-node-desc">执行实现<br>编码/部署/验证</div>
+            </div>
+            <div class="prar-arrow">&rarr;</div>
+            <div class="prar-node">
+              <div class="prar-node-circle">R</div>
+              <div class="prar-node-title">Reflect</div>
+              <div class="prar-node-desc">反思总结<br>提炼技能与教训</div>
+            </div>
+          </div>
+          <div class="prar-loop">&#8635; 循环迭代 &mdash; 每个周期的 Reflect 产出驱动下一周期的 Perceive</div>
+        </div>
+
+        <h3>PRAR 四阶段详解</h3>
+        <div class="card-grid">
+          <div class="info-card">
+            <div class="info-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F8F72" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></svg>
+            </div>
+            <h4>Perceive 感知</h4>
+            <p>收集当前项目状态、识别待解决问题、分析运行环境。包括读取代码库、检查部署状态、识别错误日志等。</p>
+          </div>
+          <div class="info-card">
+            <div class="info-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4A90D9" stroke-width="2"><path d="M9.66 4A2 2 0 0 1 11.6 2h.8A2 2 0 0 1 14.34 4l.32 1.34a6 6 0 0 1 2.38 1.37l1.3-.26a2 2 0 0 1 2.14 1l.4.69a2 2 0 0 1-.4 2.37l-.97.88a6 6 0 0 1 0 2.74l.97.88a2 2 0 0 1 .4 2.37l-.4.69a2 2 0 0 1-2.14 1l-1.3-.26a6 6 0 0 1-2.38 1.37L14.34 20a2 2 0 0 1-1.94 2h-.8A2 2 0 0 1 9.66 20l-.32-1.34a6 6 0 0 1-2.38-1.37l-1.3.26a2 2 0 0 1-2.14-1l-.4-.69a2 2 0 0 1 .4-2.37l.97-.88a6 6 0 0 1 0-2.74l-.97-.88a2 2 0 0 1-.4-2.37l.4-.69a2 2 0 0 1 2.14-1l1.3.26a6 6 0 0 1 2.38-1.37z"/><circle cx="12" cy="12" r="2"/></svg>
+            </div>
+            <h4>Reason 推理</h4>
+            <p>基于感知信息进行推理分析，设计技术方案。权衡不同方案的利弊，制定实施计划，预见潜在风险。</p>
+          </div>
+          <div class="info-card">
+            <div class="info-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D9964A" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <h4>Act 行动</h4>
+            <p>执行技术方案：编写代码、修改配置、部署服务、运行测试。每个行动都有明确的验证标准。</p>
+          </div>
+          <div class="info-card">
+            <div class="info-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9B6BD9" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+            </div>
+            <h4>Reflect 反思</h4>
+            <p>总结经验教训，将可复用的知识提炼为 Skill。记录踩过的坑，更新技能注册表，为下一周期积累认知资产。</p>
+          </div>
+        </div>
+
+        <h3>本项目 PRAR 循环应用</h3>
+        <p>Focus Fitness OS 项目经历了 <strong>5 个 PRAR 循环</strong>，每个循环都解决了不同层面的核心问题，并在 Reflect 阶段产出了可复用的技能资产：</p>
+
+        <div class="callout callout-info">
+          <div class="callout-title">核心设计理念</div>
+          PRAR 循环不是简单的试错迭代，而是<strong>认知资产的积累过程</strong>。每个周期的 Reflect 阶段将隐性知识转化为显性技能（Skill），使得后续周期可以直接复用前序经验，实现认知复利。
+        </div>
+
+        <div class="card-grid">
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-green">Cycle 1-2</span></div>
+            <h4>架构与部署</h4>
+            <p>设计双系统架构，完成 Railway 部署，修复 SQLite 配置，构建多架构 Docker 镜像。</p>
+          </div>
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-blue">Cycle 3</span></div>
+            <h4>永久部署探索</h4>
+            <p>探索 Oracle Cloud 迁移，发现信用卡限制，开辟 Local Docker + Cloudflare Tunnel 无信用卡路径。</p>
+          </div>
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-orange">Cycle 4</span></div>
+            <h4>跨平台扩展</h4>
+            <p>TTS/Database 抽象层设计，Flutter Web 平台支持，响应式布局，完整 CI/CD 流水线搭建。</p>
+          </div>
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-purple">Cycle 5</span></div>
+            <h4>技能体系化</h4>
+            <p>Web 构建修复，SOLO-OS 工作流技能化，PRAR 循环 DAG 规范化，本文档产出。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: System Architecture -->
+      <section class="section" id="sec2">
+        <div class="section-header">
+          <span class="section-num">2</span>
+          <div>
+            <div class="section-title">系统架构</div>
+            <div class="section-subtitle">Dual-system: Flutter + Node-RED</div>
+          </div>
+        </div>
+
+        <p>Focus Fitness OS 采用<strong>双系统架构</strong>：Flutter 移动应用提供跨平台前端，Node-RED 提供 RESTful API 后端。两个系统通过 JWT 认证的 HTTP API 解耦通信。</p>
+
+        <!-- Architecture Diagram -->
+        <div class="arch-diagram">
+          <div class="arch-layer">
+            <div class="arch-box arch-client">
+              Flutter App
+              <div class="arch-sub">Android APK + Web</div>
+            </div>
+            <div class="arch-box arch-client">
+              Flutter Web
+              <div class="arch-sub">GitHub Pages</div>
+            </div>
+          </div>
+          <div class="arch-connector">&darr; HTTPS / JWT Auth</div>
+          <div class="arch-layer">
+            <div class="arch-box arch-backend">
+              Node-RED Backend
+              <div class="arch-sub">8 API Endpoints</div>
+            </div>
+          </div>
+          <div class="arch-connector">&darr;</div>
+          <div class="arch-layer">
+            <div class="arch-box arch-db">
+              SQLite
+              <div class="arch-sub">flows.json + users</div>
+            </div>
+            <div class="arch-box arch-infra">
+              Railway / Docker
+              <div class="arch-sub">sha-75575f7</div>
+            </div>
+          </div>
+        </div>
+
+        <h3>Flutter 移动应用</h3>
+        <div class="card">
+          <div class="badge-row">
+            <span class="badge badge-green">Riverpod</span>
+            <span class="badge badge-blue">Drift</span>
+            <span class="badge badge-orange">GoRouter</span>
+            <span class="badge badge-purple">Cross-Platform</span>
+          </div>
+          <table>
+            <tr><th style="width:160px;">技术栈</th><td>Riverpod (状态管理) + Drift (本地数据库) + GoRouter (路由导航)</td></tr>
+            <tr><th>跨平台机制</th><td>Conditional imports 实现 Native / Web 平台适配</td></tr>
+            <tr><th>目标平台</th><td>Android APK + Web (GitHub Pages)</td></tr>
+            <tr><th>代码复用率</th><td>90%+ 共享代码，仅 TTS / Database 层有平台差异</td></tr>
+            <tr><th>Seed Color</th><td><code>#6F8F72</code> (Material 3 ColorScheme.fromSeed)</td></tr>
+          </table>
+        </div>
+
+        <h3>Node-RED 后端</h3>
+        <div class="card">
+          <div class="badge-row">
+            <span class="badge badge-green">8 Endpoints</span>
+            <span class="badge badge-blue">SQLite</span>
+            <span class="badge badge-orange">JWT Auth</span>
+            <span class="badge badge-red">scrypt Hashing</span>
+          </div>
+          <p>Node-RED 后端提供 <strong>8 个 API 端点</strong>，覆盖用户认证、数据同步、健康记录管理等功能：</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>#</th><th>Endpoint</th><th>Method</th><th>功能</th><th>认证</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>1</td><td><code>/api/register</code></td><td>POST</td><td>用户注册</td><td><span class="badge badge-gray">Public</span></td></tr>
+                <tr><td>2</td><td><code>/api/login</code></td><td>POST</td><td>用户登录，返回 JWT</td><td><span class="badge badge-gray">Public</span></td></tr>
+                <tr><td>3</td><td><code>/api/verify</code></td><td>GET</td><td>验证 JWT 有效性</td><td><span class="badge badge-green">JWT</span></td></tr>
+                <tr><td>4</td><td><code>/api/profile</code></td><td>GET</td><td>获取用户资料</td><td><span class="badge badge-green">JWT</span></td></tr>
+                <tr><td>5</td><td><code>/api/health-records</code></td><td>GET</td><td>获取健康记录列表</td><td><span class="badge badge-green">JWT</span></td></tr>
+                <tr><td>6</td><td><code>/api/health-records</code></td><td>POST</td><td>创建健康记录</td><td><span class="badge badge-green">JWT</span></td></tr>
+                <tr><td>7</td><td><code>/api/sync</code></td><td>POST</td><td>数据同步</td><td><span class="badge badge-green">JWT</span></td></tr>
+                <tr><td>8</td><td><code>/api/stats</code></td><td>GET</td><td>获取统计数据</td><td><span class="badge badge-green">JWT</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>安全特性</h4>
+          <ul>
+            <li><strong>JWT 认证</strong>：所有受保护端点均需 Bearer Token 验证</li>
+            <li><strong>scrypt 密码哈希</strong>：使用 Node.js 内置 <code>crypto.scrypt</code> 进行密码加密存储</li>
+            <li><strong>SQLite 持久化</strong>：flows.json 配置 + users 表结构</li>
+          </ul>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">部署状态</div>
+          后端已部署至 <strong>Railway</strong>（commit sha-75575f7），全部 8 个端点已验证通过。当前为 trial 环境，需规划永久部署方案。
+        </div>
+      </section>
+
+      <!-- Section 3: Cross-Platform Strategy -->
+      <section class="section" id="sec3">
+        <div class="section-header">
+          <span class="section-num">3</span>
+          <div>
+            <div class="section-title">跨平台策略</div>
+            <div class="section-subtitle">Single Codebase - Multiple Platforms</div>
+          </div>
+        </div>
+
+        <p>采用<strong>单一代码库多平台输出</strong>策略，通过 Conditional Imports 实现平台差异化适配，90%+ 代码在 Android 和 Web 之间共享。</p>
+
+        <div class="card-grid">
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-green">90%+</span></div>
+            <h4>代码复用率</h4>
+            <p>共享业务逻辑、UI 组件、状态管理，仅平台适配层有差异代码。</p>
+          </div>
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-blue">2 Platforms</span></div>
+            <h4>输出平台</h4>
+            <p>Android APK（移动端原生）+ Web（浏览器 SPA，部署于 GitHub Pages）。</p>
+          </div>
+          <div class="info-card">
+            <div class="badge-row"><span class="badge badge-orange">Conditional Imports</span></div>
+            <h4>适配机制</h4>
+            <p>Dart Conditional Imports 编译时选择平台实现，零运行时开销。</p>
+          </div>
+        </div>
+
+        <h3>TTS 抽象层</h3>
+        <div class="card">
+          <p>Text-to-Speech 功能通过抽象接口实现跨平台适配：</p>
+          <pre><code>// 平台无关接口
+abstract class TtsService {
+  Future&lt;void&gt; speak(String text);
+  Future&lt;void&gt; stop();
+}
+
+// Native 实现 (flutter_tts)
+class FlutterTtsService implements TtsService { ... }
+
+// Web 实现 (dart:html SpeechSynthesis)
+class WebTtsService implements TtsService {
+  // window.speechSynthesis (nullable in Dart 3.12)
+}</code></pre>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>平台</th><th>实现</th><th>依赖</th></tr></thead>
+              <tbody>
+                <tr><td>Native (Android)</td><td><code>flutter_tts</code> package</td><td>原生 Android TTS Engine</td></tr>
+                <tr><td>Web</td><td><code>dart:html</code> <code>SpeechSynthesis</code></td><td>浏览器 Web Speech API</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <h3>Database 抽象层</h3>
+        <div class="card">
+          <p>Drift 数据库通过不同的 Connection 实现实现跨平台：</p>
+          <pre><code>// Native: NativeDatabase (sqflite)
+LazyDatabase(() async {
+  final dbFolder = await getApplicationDocumentsDirectory();
+  final file = File(p.join(dbFolder.path, 'app.db'));
+  return NativeDatabase(file);
+})
+
+// Web: WebDatabase (drift/web.dart)
+LazyDatabase(() async {
+  return WebDatabase('app_db');
+})</code></pre>
+          <div class="callout callout-warn">
+            <div class="callout-title">重要发现</div>
+            <strong>drift_web 不是独立包</strong>。Drift 的 Web 支持内置于主 <code>drift</code> 包中，通过 <code>package:drift/web.dart</code> 导入。<code>drift_web</code> 包不存在，添加到 pubspec.yaml 会导致解析失败。
+          </div>
+        </div>
+
+        <h3>响应式布局策略</h3>
+        <div class="card">
+          <p>根据屏幕宽度自适应导航模式，实现移动端与桌面端的统一体验：</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>屏幕宽度</th><th>导航模式</th><th>适用场景</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><code>&lt; 600px</code></td>
+                  <td><strong>BottomNavigationBar</strong></td>
+                  <td>手机竖屏 / Web 移动端</td>
+                </tr>
+                <tr>
+                  <td><code>&gt;= 600px</code></td>
+                  <td><strong>NavigationRail</strong></td>
+                  <td>平板 / Web 桌面端</td>
+                </tr>
+                <tr>
+                  <td><code>&gt;= 900px</code></td>
+                  <td><strong>NavigationRail (extended)</strong></td>
+                  <td>桌面宽屏 / Web 大屏</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <pre><code>LayoutBuilder(builder: (context, constraints) {
+  if (constraints.maxWidth >= 900) {
+    return _extendedRail();  // 展开式侧边栏
+  } else if (constraints.maxWidth >= 600) {
+    return _compactRail();   // 紧凑式侧边栏
+  } else {
+    return _bottomNav();     // 底部导航栏
+  }
+})</code></pre>
+        </div>
+      </section>
+
+      <!-- Section 4: CI/CD Pipeline -->
+      <section class="section" id="sec4">
+        <div class="section-header">
+          <span class="section-num">4</span>
+          <div>
+            <div class="section-title">CI/CD 流水线</div>
+            <div class="section-subtitle">5 GitHub Actions Workflows</div>
+          </div>
+        </div>
+
+        <p>项目配置了 <strong>5 个 GitHub Actions 工作流</strong>，覆盖质量门禁、Web 构建、APK 打包、Docker 发布和包可见性管理，通过触发条件分离实现高频/低频部署的差异化策略。</p>
+
+        <div class="pipeline">
+          <!-- ci.yml -->
+          <div class="pipeline-row">
+            <div class="pipeline-trigger ci">
+              <span>ci.yml</span>
+              <span style="font-size:11px;opacity:0.8;">push + PR</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-action">
+              <strong>Quality Gate</strong>
+              <span>flutter analyze + flutter test，所有 push 和 PR 触发，确保代码质量</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-output">
+              <span class="badge badge-green">Pass/Fail</span>
+              <span style="font-size:11px;">Gate</span>
+            </div>
+          </div>
+
+          <!-- build-web.yml -->
+          <div class="pipeline-row">
+            <div class="pipeline-trigger web">
+              <span>build-web.yml</span>
+              <span style="font-size:11px;opacity:0.8;">push to master</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-action">
+              <strong>Flutter Web Build</strong>
+              <span>flutter build web --release，部署至 GitHub Pages，高频触发</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-output">
+              <span class="badge badge-green">GitHub Pages</span>
+              <span style="font-size:11px;">Live Site</span>
+            </div>
+          </div>
+
+          <!-- build-apk.yml -->
+          <div class="pipeline-row">
+            <div class="pipeline-trigger apk">
+              <span>build-apk.yml</span>
+              <span style="font-size:11px;opacity:0.8;">tag v*</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-action">
+              <strong>Android APK Build</strong>
+              <span>flutter build apk --release，创建 GitHub Release，低频触发</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-output">
+              <span class="badge badge-blue">GitHub Release</span>
+              <span style="font-size:11px;">Tagged</span>
+            </div>
+          </div>
+
+          <!-- docker-publish.yml -->
+          <div class="pipeline-row">
+            <div class="pipeline-trigger docker">
+              <span>docker-publish.yml</span>
+              <span style="font-size:11px;opacity:0.8;">push + tag</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-action">
+              <strong>Multi-arch Docker</strong>
+              <span>构建 amd64 + arm64 镜像，推送至 GHCR (GitHub Container Registry)</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-output">
+              <span class="badge badge-purple">GHCR</span>
+              <span style="font-size:11px;">Multi-arch</span>
+            </div>
+          </div>
+
+          <!-- make-package-public.yml -->
+          <div class="pipeline-row">
+            <div class="pipeline-trigger pkg">
+              <span>make-package-public.yml</span>
+              <span style="font-size:11px;opacity:0.8;">manual</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-action">
+              <strong>Package Visibility</strong>
+              <span>将 GHCR 包设置为 public，确保镜像可公开拉取</span>
+            </div>
+            <div class="pipeline-arrow">&rarr;</div>
+            <div class="pipeline-output">
+              <span class="badge badge-gray">Public</span>
+              <span style="font-size:11px;">Visibility</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>触发策略分离</h3>
+        <div class="card">
+          <p>通过不同的触发条件实现<strong>高频 Web 与低频 APK 的分离</strong>，避免不必要的构建开销：</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>产物</th><th>触发条件</th><th>频率</th><th>部署目标</th><th>理由</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><strong>Web</strong></td>
+                  <td>push to master</td>
+                  <td>高频</td>
+                  <td>GitHub Pages</td>
+                  <td>Web 迭代快，每次提交即可预览</td>
+                </tr>
+                <tr>
+                  <td><strong>APK</strong></td>
+                  <td>tag v*</td>
+                  <td>低频</td>
+                  <td>GitHub Release</td>
+                  <td>APK 需用户手动安装，仅在版本发布时构建</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="callout callout-danger">
+          <div class="callout-title">YAML 注释陷阱</div>
+          GitHub Actions YAML 文件中<strong>禁止使用中文注释</strong>。中文注释会导致 YAML 解析失败（encoding error），所有注释必须使用英文。这是一个反复踩过的坑。
+        </div>
+      </section>
+
+      <!-- Section 5: Deployment Architecture -->
+      <section class="section" id="sec5">
+        <div class="section-header">
+          <span class="section-num">5</span>
+          <div>
+            <div class="section-title">部署架构</div>
+            <div class="section-subtitle">Current + Permanent Deployment Paths</div>
+          </div>
+        </div>
+
+        <h3>当前部署：Railway (Trial)</h3>
+        <div class="card">
+          <div class="badge-row">
+            <span class="badge badge-green">8/8 Verified</span>
+            <span class="badge badge-orange">Trial</span>
+          </div>
+          <p>后端当前部署于 Railway（commit sha-75575f7），全部 8 个 API 端点已验证通过。但 Railway trial 有时间限制和休眠机制，不适合作为永久部署方案。</p>
+        </div>
+
+        <h3>永久部署方案对比</h3>
+        <div class="card-grid">
+          <div class="info-card" style="border-top-color:#66BB6A;">
+            <div class="badge-row"><span class="badge badge-green">推荐</span><span class="badge badge-gray">Free</span></div>
+            <h4>Local Docker + Cloudflare Tunnel</h4>
+            <p>本地 Docker 运行后端，通过 Cloudflare Tunnel 暴露至公网。</p>
+            <ul style="margin-top:8px;font-size:12px;">
+              <li>免费，无需信用卡</li>
+              <li>自动 HTTPS / TLS</li>
+              <li>DDoS 防护</li>
+              <li>24/7 不休眠</li>
+            </ul>
+          </div>
+          <div class="info-card" style="border-top-color:#FFA726;">
+            <div class="badge-row"><span class="badge badge-orange">需信用卡</span></div>
+            <h4>Oracle Cloud Always Free</h4>
+            <p>Oracle Cloud 永久免费层，提供 ARM 实例。</p>
+            <ul style="margin-top:8px;font-size:12px;">
+              <li>永久免费（Always Free）</li>
+              <li>ARM Ampere A1 实例</li>
+              <li>24GB RAM (最大)</li>
+              <li>需要信用卡验证</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">Cloudflare Tunnel 优势</div>
+          <strong>Cloudflare Tunnel</strong>是当前最优的永久部署路径：完全免费、无需信用卡、提供公网 HTTPS、自动 TLS 证书管理、内置 DDoS 防护，且 <strong>24/7 不会休眠</strong>。它通过在本地运行 <code>cloudflared</code> 守护进程建立到 Cloudflare 边缘网络的反向隧道，无需开放任何入站端口。
+        </div>
+
+        <h3>部署技能：focus-fitness-deploy</h3>
+        <div class="card">
+          <p>已创建 <strong>focus-fitness-deploy</strong> 技能，封装了完整的 5 阶段部署工作流：</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Phase</th><th>名称</th><th>内容</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Backend Deploy</td><td>Node-RED Docker 容器部署</td></tr>
+                <tr><td>2</td><td>Tunnel Setup</td><td>Cloudflare Tunnel 配置与连接</td></tr>
+                <tr><td>3</td><td>Flutter Android</td><td>APK 构建与发布</td></tr>
+                <tr><td>4</td><td>Flutter Web</td><td>Web 构建与 GitHub Pages 部署</td></tr>
+                <tr><td>5</td><td>CI/CD Pipeline</td><td>GitHub Actions 流水线配置</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 6: Skills Registry -->
+      <section class="section" id="sec6">
+        <div class="section-header">
+          <span class="section-num">6</span>
+          <div>
+            <div class="section-title">可复用技能注册表</div>
+            <div class="section-subtitle">Reusable Skills Registry</div>
+          </div>
+        </div>
+
+        <p>通过 PRAR 循环的 Reflect 阶段，项目积累了 <strong>4 个可复用技能</strong>，总计 17 个文件，覆盖认知编排、跨平台扩展、部署工作流和隧道方案。</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Skill</th>
+                <th>Files</th>
+                <th>Purpose</th>
+                <th>来源 Cycle</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong>solo-os-prar-workflow</strong>
+                  <br><span class="badge badge-green">Core</span>
+                </td>
+                <td><span class="badge badge-blue">7 files</span></td>
+                <td>PRAR 认知循环编排器，定义 Perceive - Reason - Act - Reflect 工作流规范，支持 DAG 声明与软/硬路由</td>
+                <td><span class="badge badge-gray">5</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>flutter-cross-platform</strong>
+                  <br><span class="badge badge-green">Platform</span>
+                </td>
+                <td><span class="badge badge-blue">4 files</span></td>
+                <td>Flutter Web/Desktop 扩展指南，涵盖 TTS 抽象、Drift Web 迁移、响应式布局、平台检测</td>
+                <td><span class="badge badge-gray">4</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>focus-fitness-deploy</strong>
+                  <br><span class="badge badge-green">Deploy</span>
+                </td>
+                <td><span class="badge badge-blue">1 file</span></td>
+                <td>Focus Fitness OS 完整部署工作流，5 阶段流程：Backend / Tunnel / Android / Web / CI-CD</td>
+                <td><span class="badge badge-gray">2-3</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>deploy-local-tunnel</strong>
+                  <br><span class="badge badge-green">Infra</span>
+                </td>
+                <td><span class="badge badge-blue">5 files</span></td>
+                <td>Local Docker + Cloudflare Tunnel 部署方案，无信用卡永久部署路径</td>
+                <td><span class="badge badge-gray">3</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">技能复利效应</div>
+          每个技能都来源于真实的 PRAR 循环实践，而非理论设计。技能之间形成<strong>依赖链</strong>：<code>focus-fitness-deploy</code> 依赖 <code>deploy-local-tunnel</code>，<code>flutter-cross-platform</code> 被 <code>focus-fitness-deploy</code> 引用。这种网状复用是 SOLO-OS 的核心价值。
+        </div>
+      </section>
+
+      <!-- Section 7: PRAR Cycle History -->
+      <section class="section" id="sec7">
+        <div class="section-header">
+          <span class="section-num">7</span>
+          <div>
+            <div class="section-title">PRAR 循环历史</div>
+            <div class="section-subtitle">5 Cognitive Cycles - Complete Record</div>
+          </div>
+        </div>
+
+        <p>以下是 Focus Fitness OS 项目的完整 PRAR 循环记录，每个循环包含 Perceive / Reason / Act / Reflect 四个阶段的详细内容。</p>
+
+        <div class="timeline">
+          <!-- Cycle 1 -->
+          <div class="timeline-item">
+            <div class="timeline-dot">1</div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                Cycle 1: 架构设计 + 安全文档
+                <span class="badge badge-green">Architecture</span>
+              </div>
+              <div class="timeline-body">
+                <strong>P:</strong> 需要设计 Focus Fitness OS 的整体架构，包括前后端技术选型和安全方案。<br>
+                <strong>R:</strong> 评估 Flutter vs React Native，选择 Flutter + Riverpod + Drift；后端选择 Node-RED 快速搭建 RESTful API。<br>
+                <strong>A:</strong> 完成双系统架构设计，实现 JWT 认证 + scrypt 密码哈希，编写安全设计文档。<br>
+                <strong>R:</strong> 确立了双系统架构模式，积累了 Node-RED 安全配置经验。
+              </div>
+            </div>
+          </div>
+
+          <!-- Cycle 2 -->
+          <div class="timeline-item">
+            <div class="timeline-dot">2</div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                Cycle 2: Railway 部署 + SQLite 修复 + 多架构 Docker
+                <span class="badge badge-blue">Deploy</span>
+              </div>
+              <div class="timeline-body">
+                <strong>P:</strong> 后端需要部署到公网，Node-RED 的 SQLite 配置在容器环境中报错。<br>
+                <strong>R:</strong> 选择 Railway 作为快速部署平台；分析 SQLite 路径问题，确定需要持久化 volume 挂载。<br>
+                <strong>A:</strong> 部署至 Railway（sha-75575f7），修复 SQLite 配置，构建 amd64 + arm64 多架构 Docker 镜像并推送 GHCR。全部 8 端点验证通过。<br>
+                <strong>R:</strong> 产出 <code>focus-fitness-deploy</code> 技能，记录 Docker ENTRYPOINT 陷阱和 flows.json 格式要求。
+              </div>
+            </div>
+          </div>
+
+          <!-- Cycle 3 -->
+          <div class="timeline-item">
+            <div class="timeline-dot">3</div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                Cycle 3: Oracle Cloud 迁移 + 无信用卡路径
+                <span class="badge badge-orange">Migration</span>
+              </div>
+              <div class="timeline-body">
+                <strong>P:</strong> Railway trial 有时间限制，需要永久部署方案。Oracle Cloud Always Free 是候选。<br>
+                <strong>R:</strong> 评估 Oracle Cloud Always Free vs 本地 Docker + Cloudflare Tunnel。发现 Oracle 需要信用卡验证。<br>
+                <strong>A:</strong> 开辟 Local Docker + Cloudflare Tunnel 路径：免费、无信用卡、自动 HTTPS、24/7 不休眠。<br>
+                <strong>R:</strong> 产出 <code>deploy-local-tunnel</code> 技能（5 files），永久解决无信用卡部署问题。
+              </div>
+            </div>
+          </div>
+
+          <!-- Cycle 4 -->
+          <div class="timeline-item">
+            <div class="timeline-dot">4</div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                Cycle 4: 跨平台 TTS/DB 抽象 + Web 平台 + CI/CD
+                <span class="badge badge-purple">Cross-Platform</span>
+              </div>
+              <div class="timeline-body">
+                <strong>P:</strong> 应用需要扩展到 Web 平台，TTS 和 Database 需要跨平台适配。<br>
+                <strong>R:</strong> 设计 Conditional Imports 抽象层；规划响应式布局三档断点；设计 5 个 CI/CD 工作流。<br>
+                <strong>A:</strong> 实现 TTS 抽象（flutter_tts / dart:html）、DB 抽象（NativeDatabase / WebDatabase）、响应式导航（BottomNav / Rail / extended）。搭建完整 CI/CD 流水线。<br>
+                <strong>R:</strong> 产出 <code>flutter-cross-platform</code> 技能（4 files），发现 drift_web 非独立包等关键教训。
+              </div>
+            </div>
+          </div>
+
+          <!-- Cycle 5 -->
+          <div class="timeline-item current">
+            <div class="timeline-dot">5</div>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                Cycle 5 (Current): Web 构建修复 + SOLO-OS 工作流技能
+                <span class="badge badge-red">Current</span>
+              </div>
+              <div class="timeline-body">
+                <strong>P:</strong> Flutter Web 构建失败，dart2js 编译报错；需要将 PRAR 工作流本身技能化。<br>
+                <strong>R:</strong> 分析 dart:js_interop @staticInterop 在 dart2js 上的兼容性问题，改用 dart:html；设计 PRAR DAG 规范，区分软路由与硬调度。<br>
+                <strong>A:</strong> 修复 Web 构建（dart:html 替换、public 函数名、SpeechSynthesis nullable 处理）；创建 <code>solo-os-prar-workflow</code> 技能（7 files）；编写本文档。<br>
+                <strong>R:</strong> 将 SOLO-OS 工作流本身形式化为可复用技能，定义 DAG 声明规范，完成认知闭环的元层级抽象。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 8: Key Lessons -->
+      <section class="section" id="sec8">
+        <div class="section-header">
+          <span class="section-num">8</span>
+          <div>
+            <div class="section-title">关键教训</div>
+            <div class="section-subtitle">Lessons Learned - Pitfalls & Solutions</div>
+          </div>
+        </div>
+
+        <p>以下是 5 个 PRAR 循环中积累的<strong>关键技术教训</strong>，每一条都来自真实的调试实践。</p>
+
+        <div class="lesson-grid">
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-red">Critical</span><span class="badge badge-gray">Drift</span></div>
+            <h4>drift_web 不是独立包</h4>
+            <p>Drift 的 Web 支持内置于主 <code>drift</code> 包中，通过 <code>package:drift/web.dart</code> 导入。在 pubspec.yaml 中添加 <code>drift_web</code> 依赖会导致解析失败。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-orange">Breaking Change</span><span class="badge badge-gray">Flutter 3.29+</span></div>
+            <h4>--web-renderer flag 已移除</h4>
+            <p>Flutter 3.29+ 移除了 <code>--web-renderer</code> 命令行参数。CanvasKit 现在是默认且唯一的 Web 渲染器，无需也无法再手动指定。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-red">dart2js</span><span class="badge badge-gray">Dart 3.12</span></div>
+            <h4>@staticInterop 兼容性问题</h4>
+            <p><code>dart:js_interop</code> 的 <code>@staticInterop</code> 模式在 Dart 3.12 + dart2js 组合下可能编译失败。解决方案：改用 <code>dart:html</code> 直接调用浏览器 API。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-orange">Nullable</span><span class="badge badge-gray">dart:html</span></div>
+            <h4>SpeechSynthesis 可空类型</h4>
+            <p>在 Dart 3.12 中，<code>window.speechSynthesis</code> 返回 <code>SpeechSynthesis?</code>（可空类型），必须进行 null 检查后才能调用方法。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-red">dart2js</span><span class="badge badge-gray">Conditional Imports</span></div>
+            <h4>私有函数跨平台解析失败</h4>
+            <p>Conditional imports 中使用 <code>_</code> 前缀的私有函数在 dart2js 编译时可能无法正确解析。解决方案：使用 public 函数名（去掉 <code>_</code> 前缀）。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-red">YAML</span><span class="badge badge-gray">GitHub Actions</span></div>
+            <h4>YAML 禁止中文注释</h4>
+            <p>GitHub Actions 的 YAML 文件中使用中文注释会导致解析失败（encoding error）。所有注释必须使用英文。这是一个反复出现的问题。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-orange">Node-RED</span><span class="badge badge-gray">flows.json</span></div>
+            <h4>wires 格式必须为数组嵌套</h4>
+            <p>Node-RED flows.json 中 <code>wires</code> 字段格式必须为 <code>[["node_id"]]</code>（数组的数组），即使只有一个连接目标。格式错误会导致节点连线丢失。</p>
+          </div>
+
+          <div class="lesson-card">
+            <div class="badge-row"><span class="badge badge-red">Docker</span><span class="badge badge-gray">ENTRYPOINT</span></div>
+            <h4>ENTRYPOINT 会清除 base 入口</h4>
+            <p>Docker 中使用 <code>ENTRYPOINT []</code> 空数组形式会清除 base image 的 <code>entrypoint.sh</code>。应使用 <code>ENTRYPOINT ["command", "arg"]</code> 完整形式，或使用 <code>CMD</code>。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 9: Roadmap -->
+      <section class="section" id="sec9">
+        <div class="section-header">
+          <span class="section-num">9</span>
+          <div>
+            <div class="section-title">未来路线图</div>
+            <div class="section-subtitle">Future Roadmap</div>
+          </div>
+        </div>
+
+        <div class="roadmap">
+          <div class="roadmap-card immediate">
+            <div class="roadmap-label">Immediate</div>
+            <h4>即时验证</h4>
+            <ul>
+              <li>验证 GitHub Pages 部署是否正常</li>
+              <li>测试 App 与 PC 端的数据同步</li>
+              <li>确认 Web 端 TTS 功能可用</li>
+            </ul>
+          </div>
+          <div class="roadmap-card short">
+            <div class="roadmap-label">Short-term</div>
+            <h4>短期优化</h4>
+            <ul>
+              <li>Drift 迁移：WebDatabase 到 WasmDatabase.open()</li>
+              <li>提升 Web 端数据库性能</li>
+              <li>优化 Web 加载速度</li>
+            </ul>
+          </div>
+          <div class="roadmap-card medium">
+            <div class="roadmap-label">Medium-term</div>
+            <h4>中期部署</h4>
+            <ul>
+              <li>Local Docker + Cloudflare Tunnel</li>
+              <li>永久后端部署上线</li>
+              <li>配置 24/7 不休眠服务</li>
+            </ul>
+          </div>
+          <div class="roadmap-card long">
+            <div class="roadmap-label">Long-term</div>
+            <h4>长期扩展</h4>
+            <ul>
+              <li>Desktop 支持 (Windows/macOS)</li>
+              <li>PWA 离线模式</li>
+              <li>完整跨平台覆盖</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">WasmDatabase 迁移说明</div>
+          当前 Web 端使用 <code>WebDatabase</code>（基于 IndexedDB 的 JavaScript 实现），性能有限。短期计划迁移至 <code>WasmDatabase.open()</code>，利用 WebAssembly + OPFS (Origin Private File System) 获得接近原生的 SQLite 性能。
+        </div>
+      </section>
+
+      <!-- Section 10: SOLO-OS DAG Spec -->
+      <section class="section" id="sec10">
+        <div class="section-header">
+          <span class="section-num">10</span>
+          <div>
+            <div class="section-title">SOLO-OS DAG 规范</div>
+            <div class="section-subtitle">DAG Declaration - Soft Routing vs Hard Scheduling</div>
+          </div>
+        </div>
+
+        <p>SOLO-OS 允许将 PRAR 循环声明为 <strong>DAG（有向无环图）</strong>，实现工作流的结构化编排。DAG 声明支持两种执行模式：<strong>软路由</strong>与<strong>硬调度</strong>。</p>
+
+        <h3>两种执行模式</h3>
+        <div class="card-grid">
+          <div class="info-card" style="border-top-color:#42A5F5;">
+            <div class="badge-row"><span class="badge badge-blue">Soft Routing</span></div>
+            <h4>软路由 (Agent reads spec)</h4>
+            <p>Agent 读取 DAG 规范作为指导，自行决定执行顺序和策略。灵活度高，适合探索性任务和需要人类判断的场景。DAG 作为"路线图"而非"硬约束"。</p>
+          </div>
+          <div class="info-card" style="border-top-color:#AB47BC;">
+            <div class="badge-row"><span class="badge badge-purple">Hard Scheduling</span></div>
+            <h4>硬调度 (Compiler executes DAG)</h4>
+            <p>编译器/调度器严格按 DAG 拓扑顺序执行节点，每个节点完成后自动触发后继节点。确定性高，适合 CI/CD 等需要可重复执行的场景。</p>
+          </div>
+        </div>
+
+        <h3>DAG 声明示例：Flutter Web 构建修复循环</h3>
+        <p>以下以 <strong>Cycle 5</strong> 的 Flutter Web 构建修复为例，展示一个完整的 PRAR DAG 声明：</p>
+
+        <pre><code>{
+  "dag_id": "cycle5-web-build-fix",
+  "description": "Flutter Web build fix + SOLO-OS workflow skill",
+  "nodes": [
+    {
+      "id": "perceive-1",
+      "phase": "perceive",
+      "action": "Identify dart2js compilation errors in Flutter Web build",
+      "dependencies": []
+    },
+    {
+      "id": "perceive-2",
+      "phase": "perceive",
+      "action": "Review @staticInterop and dart:js_interop usage",
+      "dependencies": ["perceive-1"]
+    },
+    {
+      "id": "reason-1",
+      "phase": "reason",
+      "action": "Analyze root cause: @staticInterop fails on dart2js",
+      "dependencies": ["perceive-2"]
+    },
+    {
+      "id": "reason-2",
+      "phase": "reason",
+      "action": "Design fix: replace dart:js_interop with dart:html",
+      "dependencies": ["reason-1"]
+    },
+    {
+      "id": "act-1",
+      "phase": "act",
+      "action": "Rewrite TTS service using dart:html SpeechSynthesis",
+      "dependencies": ["reason-2"]
+    },
+    {
+      "id": "act-2",
+      "phase": "act",
+      "action": "Fix private function names to public for dart2js",
+      "dependencies": ["reason-2"]
+    },
+    {
+      "id": "act-3",
+      "phase": "act",
+      "action": "Handle nullable window.speechSynthesis",
+      "dependencies": ["reason-2"]
+    },
+    {
+      "id": "act-4",
+      "phase": "act",
+      "action": "Run flutter build web --release to verify fix",
+      "dependencies": ["act-1", "act-2", "act-3"]
+    },
+    {
+      "id": "reflect-1",
+      "phase": "reflect",
+      "action": "Extract lessons: dart2js pitfalls, dart:html patterns",
+      "dependencies": ["act-4"]
+    },
+    {
+      "id": "reflect-2",
+      "phase": "reflect",
+      "action": "Create solo-os-prar-workflow skill (7 files)",
+      "dependencies": ["reflect-1"]
+    },
+    {
+      "id": "reflect-3",
+      "phase": "reflect",
+      "action": "Write architecture document (this file)",
+      "dependencies": ["reflect-2"]
+    }
+  ],
+  "execution_mode": "soft_routing",
+  "output": {
+    "skills": ["solo-os-prar-workflow"],
+    "lessons": 4,
+    "artifacts": ["solo-os-full-architecture.html"]
+  }
+}</code></pre>
+
+        <!-- DAG Visual -->
+        <div class="dag-container">
+          <div class="dag-nodes">
+            <div class="dag-node">
+              <span class="dag-phase">Perceive</span>
+              Identify dart2js errors
+            </div>
+            <div class="dag-connector-down"></div>
+            <div class="dag-node">
+              <span class="dag-phase">Reason</span>
+              Root cause analysis
+            </div>
+            <div class="dag-connector-down"></div>
+            <div class="dag-branch">
+              <div class="dag-node">
+                <span class="dag-phase">Act</span>
+                dart:html TTS
+              </div>
+              <div class="dag-node">
+                <span class="dag-phase">Act</span>
+                Public fn names
+              </div>
+              <div class="dag-node">
+                <span class="dag-phase">Act</span>
+                Nullable handling
+              </div>
+            </div>
+            <div class="dag-connector-down"></div>
+            <div class="dag-node">
+              <span class="dag-phase">Act</span>
+              flutter build web verify
+            </div>
+            <div class="dag-connector-down"></div>
+            <div class="dag-node">
+              <span class="dag-phase">Reflect</span>
+              Extract lessons + Create skill
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">DAG 的价值</div>
+          DAG 声明将隐性的认知过程转化为<strong>显性的可执行规范</strong>。在软路由模式下，它为 Agent 提供结构化指导；在硬调度模式下，它实现确定性的自动化编排。同一个 DAG 可以在两种模式间切换，适应不同的执行需求。
+        </div>
+
+        <div class="card">
+          <h4>模式选择指南</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>场景</th><th>推荐模式</th><th>理由</th></tr></thead>
+              <tbody>
+                <tr><td>探索性开发</td><td><span class="badge badge-blue">Soft Routing</span></td><td>需要灵活性，Agent 可根据中间结果调整策略</td></tr>
+                <tr><td>CI/CD 流水线</td><td><span class="badge badge-purple">Hard Scheduling</span></td><td>需要确定性和可重复性，严格按拓扑执行</td></tr>
+                <tr><td>Bug 修复</td><td><span class="badge badge-blue">Soft Routing</span></td><td>根因分析需要推理，可能需要回溯</td></tr>
+                <tr><td>技能创建</td><td><span class="badge badge-blue">Soft Routing</span></td><td>知识提炼需要创造性思维</td></tr>
+                <tr><td>多平台构建</td><td><span class="badge badge-purple">Hard Scheduling</span></td><td>构建步骤确定，可并行执行独立任务</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <div class="footer">
+        <div class="footer-seed">Focus Fitness OS &mdash; Seed Color #6F8F72</div>
+        <p>SOLO-OS PRAR Orchestration | 5 Cycles | 4 Skills | 8 Key Lessons<br>
+        Generated by SOLO-OS Cognitive Workflow Engine</p>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+// Mobile sidebar toggle
+document.getElementById('mobileToggle').addEventListener('click', function() {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+
+// Active TOC highlighting
+const sections = document.querySelectorAll('.section');
+const tocLinks = document.querySelectorAll('.toc-link');
+
+function updateActiveTOC() {
+  let current = '';
+  sections.forEach(section => {
+    const rect = section.getBoundingClientRect();
+    if (rect.top <= 120) {
+      current = section.id;
+    }
+  });
+  tocLinks.forEach(link => {
+    link.classList.remove('active');
+    if (link.getAttribute('href') === '#' + current) {
+      link.classList.add('active');
+    }
+  });
+}
+
+window.addEventListener('scroll', updateActiveTOC);
+updateActiveTOC();
+
+// Close sidebar on link click (mobile)
+tocLinks.forEach(link => {
+  link.addEventListener('click', function() {
+    if (window.innerWidth <= 900) {
+      document.getElementById('sidebar').classList.remove('open');
+    }
+  });
+});
+</script>
+
+</body>
+</html>

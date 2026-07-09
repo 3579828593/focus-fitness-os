@@ -34,7 +34,7 @@ echo "[1/4] Exporting data from Railway..."
 # Login to get JWT
 LOGIN_RESP=$(curl -s -X POST "${RAILWAY_URL}/api/v1/auth/login" \
     -H "Content-Type: application/json" \
-    -d '{"username":"admin","password":"***REMOVED***"}')
+    -d "{\"username\":\"admin\",\"password\":\"${API_PASSWORD}\"}")
 
 ACCESS_TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || echo "")
 

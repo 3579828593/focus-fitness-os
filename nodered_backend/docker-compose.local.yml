@@ -19,9 +19,9 @@ services:
     environment:
       - FLOWS=flows.json
       - TZ=Asia/Shanghai
-      - NODE_RED_SECRET=${NODE_RED_SECRET:-dev-secret-change-in-prod}
-      - JWT_SECRET=${JWT_SECRET:-focus-fitness-os-jwt-secret-2024}
       - PORT=1880
+    env_file:
+      - .env.local
     restart: unless-stopped
     deploy:
       resources:

@@ -21,8 +21,9 @@ nodered_backend/data/
 nodered_backend/.config.json
 nodered_backend/.sessions.json
 
-# Environment
-nodered_backend/.env
+# Environment - ALL .env files excluded, only .env.example tracked
+nodered_backend/.env*
+!nodered_backend/.env.example
 nodered_backend/nginx/certs/
 
 # IDE

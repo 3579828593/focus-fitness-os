@@ -37,12 +37,32 @@ if (-not (Test-Path $dataDir)) {
     New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 }
 
-# --- Step 4: Start Node-RED ---
-Write-Host "[4/4] Starting Node-RED..." -ForegroundColor Cyan
-$env:NODE_RED_SECRET = '***REMOVED***'
-$env:JWT_SECRET = '***REMOVED***'
+# --- Step 4: Load environment from .env.local ---
+Write-Host "[4/5] Loading environment from .env.local..." -ForegroundColor Cyan
+$envFile = Join-Path $ScriptDir ".env.local"
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#")) {
+            $parts = $line -split '=', 2
+            if ($parts.Length -eq 2) {
+                $name = $parts[0].Trim()
+                $value = $parts[1].Trim()
+                Set-Item -Path "env:$name" -Value $value
+            }
+        }
+    }
+    Write-Host "  Loaded .env.local" -ForegroundColor Green
+} else {
+    Write-Host "  WARNING: .env.local not found! Copy .env.example to .env.local and fill in values." -ForegroundColor Red
+    Write-Host "  Node-RED will fail to start without required environment variables." -ForegroundColor Red
+    exit 1
+}
 $env:TZ = 'Asia/Shanghai'
 $env:FLOWS = 'flows.json'
+
+# --- Step 5: Start Node-RED ---
+Write-Host "[5/5] Starting Node-RED..." -ForegroundColor Cyan
 
 $nodeRedProc = Start-Process -FilePath "node-red" -ArgumentList "-u .", "-s settings.js" -PassThru -NoNewWindow -RedirectStandardOutput "$ScriptDir\nodered.log" -RedirectStandardError "$ScriptDir\nodered.err"
 
@@ -108,7 +128,7 @@ if ($tunnelUrl) {
     Write-Host "  Local:  http://127.0.0.1:1880" -ForegroundColor White
     Write-Host "  Public: $tunnelUrl" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Login:  admin / ***REMOVED***" -ForegroundColor White
+    Write-Host "  Login:  admin / [see .env.local for API password]" -ForegroundColor White
     Write-Host ""
     Write-Host "  NOTE: Quick Tunnel URL changes on restart." -ForegroundColor Yellow
     Write-Host "  For stable URL, set up a Named Tunnel:" -ForegroundColor Yellow

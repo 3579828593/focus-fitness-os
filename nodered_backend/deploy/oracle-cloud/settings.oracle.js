@@ -1,21 +1,30 @@
 /**
  * Focus Fitness OS - Oracle Cloud Production Settings
  * Optimized for: ARM (Ampere A1) | Docker | Nginx Reverse Proxy
- * 
- * Key differences from default settings.js:
+ *
+ * Security hardening (Cycle 7A):
  *   - uiHost: 127.0.0.1 (Nginx handles external traffic)
- *   - No dev fallbacks for secrets (production strict mode)
- *   - Enhanced logging for production monitoring
+ *   - Fail-fast: no fallback secrets, server exits if env vars missing
+ *   - CORS restricted to known origins
+ *   - No hardcoded passwords or hashes
  */
 
+function requireEnv(name) {
+    var value = process.env[name];
+    if (!value) {
+        throw new Error('FATAL: Missing required environment variable: ' + name);
+    }
+    return value;
+}
+
 module.exports = {
-    // Admin authentication (same bcrypt hash, override via env)
+    // Admin authentication: hash MUST be provided via NODE_RED_ADMIN_HASH env var
     adminAuth: {
         type: "credentials",
         users: [
             {
                 username: "admin",
-                password: process.env.NODE_RED_ADMIN_HASH || "$2b$08$***REMOVED***",
+                password: requireEnv("NODE_RED_ADMIN_HASH"),
                 permissions: "*"
             }
         ]
@@ -24,14 +33,14 @@ module.exports = {
     // Bind to localhost only - Nginx reverse proxy handles external traffic
     uiHost: "127.0.0.1",
 
-    // Credential encryption - MUST be set via environment variable
-    credentialSecret: process.env.NODE_RED_SECRET || (console.warn('[CRITICAL] NODE_RED_SECRET not set!'), "emergency-fallback-change-me"),
+    // Credential encryption - fail-fast if not set
+    credentialSecret: requireEnv("NODE_RED_SECRET"),
 
     // Global context for function nodes
     functionGlobalContext: {
         crypto: require('crypto'),
         fs: require('fs'),
-        JWT_SECRET: process.env.JWT_SECRET || (console.warn('[CRITICAL] JWT_SECRET not set!'), 'emergency-jwt-fallback-change-me')
+        JWT_SECRET: requireEnv("JWT_SECRET")
     },
 
     // Port (internal only, Nginx proxies to this)
@@ -43,7 +52,7 @@ module.exports = {
 
     // CORS - restrict to known origins in production
     httpNodeCors: {
-        origin: process.env.CORS_ORIGIN || "*",
+        origin: process.env.CORS_ALLOWED_ORIGINS || "https://3579828593.github.io",
         methods: "GET,POST,PUT,DELETE,OPTIONS",
         headers: "Origin,X-Requested-With,Content-Type,Accept,Authorization"
     },
